@@ -1,6 +1,6 @@
 from django.db.models.sql.subqueries import *
 
-from django_async_experiment.registry import from_codegen, generate_unasynced
+from django_async_patchup.registry import from_codegen, generate_unasynced
 
 
 class DeleteQueryOverrides:

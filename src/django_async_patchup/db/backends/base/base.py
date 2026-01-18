@@ -1,7 +1,7 @@
 from django.db.backends.base.base import *
-from django_async_experiment.registry import from_codegen, generate_unasynced
+from django_async_patchup.registry import from_codegen, generate_unasynced, just_patch
 from django.utils.asyncio import async_unsafe
-from django_async_experiment import ASYNC_TRUTH_MARKER
+from django_async_patchup import ASYNC_TRUTH_MARKER
 
 
 class BaseDatabaseWrapperOverides:

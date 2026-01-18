@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import inspect
-from django_async_experiment.registry import RegistryItem, sync_methods
-from django_async_experiment import setup
+from django_async_patchup.registry import RegistryItem, sync_methods
+from django_async_patchup import setup
 
 
 def test_codegen_matches():

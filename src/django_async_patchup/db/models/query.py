@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 from django.db.models.query import *
-from django_async_experiment.registry import from_codegen, generate_unasynced
-from django_async_experiment import ASYNC_TRUTH_MARKER
-
-from django.db import async_connections
+from django_async_patchup.registry import from_codegen, generate_unasynced, just_patch
+from django_async_patchup import ASYNC_TRUTH_MARKER
+from django_async_patchup.db import should_use_sync_fallback
+from django_async_patchup.db import async_connections
 from django.db.models.sql.constants import CURSOR
 
 
@@ -91,6 +91,13 @@ class QuerySetOverrides:
 
 
 class ModelIterableOverrides:
+
+    @just_patch(onto=(ModelIterable, "__aiter__"))
+    def __aiter__(self):
+        if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+            return self._sync_to_async_generator()
+        else:
+            return self._agenerator()
 
     @from_codegen(original=ModelIterable._generator)
     def _generator(self):

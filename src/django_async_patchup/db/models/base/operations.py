@@ -1,5 +1,5 @@
 # XXX fix path of this file
-from django_async_experiment.registry import from_codegen, generate_unasynced
+from django_async_patchup.registry import from_codegen, generate_unasynced
 from django.db.backends.base.operations import BaseDatabaseOperations
 
 

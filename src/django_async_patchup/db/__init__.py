@@ -1,6 +1,6 @@
 from asgiref.local import Local
 from django.db.utils import AsyncConnectionHandler
-
+from django.db import *
 
 from contextlib import contextmanager
 

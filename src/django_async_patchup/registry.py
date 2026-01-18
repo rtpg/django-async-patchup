@@ -30,18 +30,29 @@ class RegistryItem:
     def apply_patch(self):
         if not self.patch:
             return
-        assert self.label == "generate_unasynced"
-        owning_cls = get_owning_class(self.original_copy)
-        print(
-            "Patching ",
-            owning_cls,
-            "with ",
-            self.our_copy,
-            "(",
-            self.our_copy.__name__,
-            ")",
-        )
-        setattr(owning_cls, self.our_copy.__name__, self.our_copy)
+
+        match self.label:
+            case "just_patch":
+                # dumb type hack
+                target_obj, name = self.original_copy
+                # original copy is the target
+                # our copy has the method def
+                print("PATCH ", target_obj, name, self.our_copy)
+                setattr(target_obj, name, self.our_copy)
+            case "generate_unasynced":
+                owning_cls = get_owning_class(self.original_copy)
+                print(
+                    "Patching ",
+                    owning_cls,
+                    "with ",
+                    self.our_copy,
+                    "(",
+                    self.our_copy.__name__,
+                    ")",
+                )
+                setattr(owning_cls, self.our_copy.__name__, self.our_copy)
+            case _:
+                assert False, self.label
 
 
 _registry: list[RegistryItem] = []
@@ -52,7 +63,7 @@ def sync_methods() -> list[RegistryItem]:
 
 
 def async_methods() -> list[RegistryItem]:
-    return [r for r in _registry if r.label == "generate_unasynced"]
+    return [r for r in _registry if r.label in ["just_patch", "generate_unasynced"]]
 
 
 def from_codegen(original: Any):
@@ -67,7 +78,17 @@ def from_codegen(original: Any):
     return register
 
 
-TRACKING_UNASYNCED = True
+def just_patch(onto):
+    def wrapper(f):
+        _registry.append(
+            RegistryItem(label="just_patch", our_copy=f, original_copy=onto, patch=True)
+        )
+        return f
+
+    return wrapper
+
+
+TRACKING_UNASYNCED = False
 if TRACKING_UNASYNCED:
 
     def generate_unasynced(sync_variant=None, async_unsafe=False, patch=True):

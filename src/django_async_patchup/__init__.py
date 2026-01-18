@@ -1,19 +1,19 @@
 # all changes should end up in here!
 
 
-from django_async_experiment.registry import async_methods
+from django_async_patchup.registry import async_methods
 
 
 def setup():
     # XXX do all the imports
-    from django_async_experiment.db.models.query import QuerySetOverrides
-    from django_async_experiment.db.models.deletion import CollectorOverrides
-    from django_async_experiment.db.backends.base.base import (
+    from django_async_patchup.db.models.query import QuerySetOverrides
+    from django_async_patchup.db.models.deletion import CollectorOverrides
+    from django_async_patchup.db.backends.base.base import (
         BaseDatabaseWrapperOverides,
     )
 
-    from django_async_experiment.db.models.sql.subqueries import DeleteQueryOverrides
-    from django_async_experiment.db.models.base.operations import (
+    from django_async_patchup.db.models.sql.subqueries import DeleteQueryOverrides
+    from django_async_patchup.db.models.base.operations import (
         BaseDatabaseOperationsOverrides,
     )
 

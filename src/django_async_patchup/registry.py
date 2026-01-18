@@ -80,8 +80,14 @@ def from_codegen(original: Any):
 
 def just_patch(onto):
     def wrapper(f):
+        if isinstance(onto, tuple):
+            original_copy = onto
+        else:
+            original_copy = (onto, f.__name__)
         _registry.append(
-            RegistryItem(label="just_patch", our_copy=f, original_copy=onto, patch=True)
+            RegistryItem(
+                label="just_patch", our_copy=f, original_copy=original_copy, patch=True
+            )
         )
         return f
 

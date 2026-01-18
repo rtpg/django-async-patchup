@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # XXX move to right spot
 from django.db.backends.postgresql.operations import *
+from .postgresql.base import *
 from django_async_patchup.registry import from_codegen, generate_unasynced
 
 

@@ -1,5 +1,10 @@
 from django.db.backends.base.base import *
 from django_async_patchup.registry import from_codegen, generate_unasynced, just_patch
+from django_async_patchup.db.backends.utils import (
+    AsyncCursorCtx,
+    AsyncCursorWrapper,
+    AsyncCursorDebugWrapper,
+)
 from django.utils.asyncio import async_unsafe
 from django_async_patchup import ASYNC_TRUTH_MARKER
 
@@ -302,7 +307,7 @@ class BaseDatabaseWrapperOverides:
     # TODO unasyncify
     @just_patch(onto=(BaseDatabaseWrapper, "_acursor"))
     def _acursor(self, name=None) -> utils.AsyncCursorCtx:
-        return utils.AsyncCursorCtx(self, name)
+        return AsyncCursorCtx(self, name)
 
     # TODO unasyncify
     @just_patch(onto=(BaseDatabaseWrapper, "acursor"))
@@ -458,12 +463,12 @@ class BaseDatabaseWrapperOverides:
     @just_patch(onto=(BaseDatabaseWrapper, "make_debug_async_cursor"))
     def make_debug_async_cursor(self, cursor):
         """Create a cursor that logs all queries in self.queries_log."""
-        return utils.AsyncCursorDebugWrapper(cursor, self)
+        return AsyncCursorDebugWrapper(cursor, self)
 
     @just_patch(onto=(BaseDatabaseWrapper, "make_async_cursor"))
     def make_async_cursor(self, cursor):
         """Create a cursor without debug logging."""
-        return utils.AsyncCursorWrapper(cursor, self)
+        return AsyncCursorWrapper(cursor, self)
 
     @just_patch(onto=(BaseDatabaseWrapper, "atemporary_connection"))
     @asynccontextmanager

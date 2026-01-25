@@ -5,6 +5,8 @@ from typing import Any
 from dataclasses import dataclass
 import inspect
 
+ASYNC_TRUTH_MARKER = True
+
 
 def get_owning_class(func):
     if inspect.ismethod(func):

@@ -1,6 +1,7 @@
 from django.db.models.sql.query import *
 from django_async_patchup.registry import just_patch
-from django_async_patchup.db import async_connections
+
+from django_async_backend.db import async_connections
 
 
 class QueryOverrides:

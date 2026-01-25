@@ -3,8 +3,10 @@ from django_async_patchup.registry import just_patch
 
 
 @just_patch(onto=Model)
-def __init_subclass__(cls, **kwargs):
-    super(Model, cls).__init_subclass__(**kwargs)
+@classmethod
+def __init_subclass__(cls, /, *args, **kwargs):
+
+    super(Model).__init_subclass__(**kwargs)
     # the following are pairings of sync and async variants of model methods
     # if a subclass overrides one of these without overriding the other, then
     # we should make the other one fallback to using the overriding one

@@ -8,9 +8,10 @@ def setup():
     # XXX do all the imports
     from django_async_patchup.db.models.query import QuerySetOverrides
     from django_async_patchup.db.models.deletion import CollectorOverrides
-    from django_async_patchup.db.backends.base.base import (
-        BaseDatabaseWrapperOverides,
-    )
+
+    # from django_async_patchup.db.backends.base.base import (
+    #     BaseDatabaseWrapperOverides,
+    # )
 
     from django_async_patchup.db.models.sql.subqueries import DeleteQueryOverrides
     from django_async_patchup.db.models.base.operations import (

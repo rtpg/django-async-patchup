@@ -5,19 +5,19 @@ from django_async_patchup.registry import from_codegen, generate_unasynced
 
 class CollectorOverrides:
 
-    @from_codegen(original=Collector.bool)
-    def bool(self, elts):
-        if hasattr(elts, "_afetch_then_len"):
-            return bool(elts._fetch_then_len())
-        else:
-            return bool(elts)
+    # @from_codegen(original=Collector.bool)
+    # def bool(self, elts):
+    #     if hasattr(elts, "_afetch_then_len"):
+    #         return bool(elts._fetch_then_len())
+    #     else:
+    #         return bool(elts)
 
-    @generate_unasynced(sync_variant=Collector.bool)
-    async def abool(self, elts):
-        if hasattr(elts, "_afetch_then_len"):
-            return bool(await elts._afetch_then_len())
-        else:
-            return bool(elts)
+    # @generate_unasynced(sync_variant=Collector.bool)
+    # async def abool(self, elts):
+    #     if hasattr(elts, "_afetch_then_len"):
+    #         return bool(await elts._afetch_then_len())
+    #     else:
+    #         return bool(elts)
 
     @from_codegen(original=Collector.add)
     def add(self, objs, source=None, nullable=False, reverse_dependency=False):

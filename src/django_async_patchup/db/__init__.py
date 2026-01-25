@@ -1,10 +1,11 @@
 from asgiref.local import Local
-from django.db.utils import AsyncConnectionHandler
+
+# from django.db.utils import AsyncConnectionHandler
 from django.db import *
 
 from contextlib import contextmanager
 
-async_connections = AsyncConnectionHandler()
+# async_connections = AsyncConnectionHandler()
 
 new_connection_block_depth = Local()
 new_connection_block_depth.value = 0

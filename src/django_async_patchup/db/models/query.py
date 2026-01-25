@@ -4,8 +4,9 @@ from django.db.models.query import *
 from django_async_patchup.registry import from_codegen, generate_unasynced, just_patch
 from django_async_patchup import ASYNC_TRUTH_MARKER
 from django_async_patchup.db import should_use_sync_fallback
-from django_async_patchup.db import async_connections
 from django.db.models.sql.constants import CURSOR
+
+from django_async_backend.db import async_connections
 
 
 class QuerySetOverrides:
@@ -24,15 +25,27 @@ class QuerySetOverrides:
         if self._prefetch_related_lookups and not self._prefetch_done:
             await self._aprefetch_related_objects()
 
-    @from_codegen(original=QuerySet._fetch_then_len)
-    def _fetch_then_len(self):
-        self._fetch_all()
-        return len(self._result_cache)
+    # @from_codegen(original=QuerySet._fetch_then_len)
+    # def _fetch_then_len(self):
+    #     self._fetch_all()
+    #     return len(self._result_cache)
 
-    @generate_unasynced(sync_variant=QuerySet._fetch_then_len)
-    async def _afetch_then_len(self):
-        await self._afetch_all()
-        return len(self._result_cache)
+    # @generate_unasynced(sync_variant=QuerySet._fetch_then_len)
+    # async def _afetch_then_len(self):
+    #     await self._afetch_all()
+    #     return len(self._result_cache)
+
+    @staticmethod
+    def _fetch_then_len(qs):
+        qs._fetch_all()
+        return len(qs._result_cache)
+
+    @staticmethod
+    async def _afetch_then_len(qs):
+        # TODO link to _fetch_then_len
+        # RawQuerySet helper
+        await qs._afetch_all()
+        return len(qs._result_cache)
 
     @from_codegen(original=QuerySet.aggregate)
     def aggregate(self, *args, **kwargs):
@@ -99,7 +112,7 @@ class ModelIterableOverrides:
         else:
             return self._agenerator()
 
-    @from_codegen(original=ModelIterable._generator)
+    @from_codegen(original=ModelIterable.__iter__)
     def _generator(self):
         queryset = self.queryset
         db = queryset.db
@@ -163,7 +176,7 @@ class ModelIterableOverrides:
 
             yield obj
 
-    @generate_unasynced(sync_variant=ModelIterable._generator)
+    @generate_unasynced(sync_variant=ModelIterable.__iter__)
     async def _agenerator(self):
         queryset = self.queryset
         db = queryset.db
@@ -1527,6 +1540,7 @@ class ModelIterableOverrides:
         Helper method for bulk_create() to insert objs one batch at a time.
         """
         if ASYNC_TRUTH_MARKER:
+
             connection = async_connections.get_connection(self.db)
         else:
             connection = connections[self.db]
@@ -1576,12 +1590,24 @@ class RawQuerySetOverrides:
         )
         self._prefetch_done = True
 
-    @from_codegen(original=RawQuerySet._fetch_then_len)
-    def _fetch_then_len(self):
-        self._fetch_all()
-        return len(self._result_cache)
+    # @from_codegen(original=RawQuerySet._fetch_then_len)
+    # def _fetch_then_len(self):
+    #     self._fetch_all()
+    #     return len(self._result_cache)
 
-    @generate_unasynced(sync_variant=RawQuerySet._fetch_then_len)
-    async def _afetch_then_len(self):
-        await self._afetch_all()
-        return len(self._result_cache)
+    # @generate_unasynced(sync_variant=RawQuerySet._fetch_then_len)
+    # async def _afetch_then_len(self):
+    #     await self._afetch_all()
+    #     return len(self._result_cache)
+
+    @staticmethod
+    def _fetch_then_len(qs):
+        qs._fetch_all()
+        return len(qs._result_cache)
+
+    @staticmethod
+    async def _afetch_then_len(qs):
+        # TODO link to _fetch_then_len
+        # RawQuerySet helper
+        await qs._afetch_all()
+        return len(qs._result_cache)

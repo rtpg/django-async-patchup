@@ -647,11 +647,14 @@ class SQLCompilerOverrides:
                 return
         # if "pg_sleep" in sql:
         #     raise ValueError("FOUND")
+        # import pdb
+
+        # pdb.set_trace()
         if ASYNC_TRUTH_MARKER:
             if chunked_fetch:
                 cursor = await (await self.connection.achunked_cursor()).__aenter__()
             else:
-                cursor = await self.connection.acursor().__aenter__()
+                cursor = await self.connection.cursor().__aenter__()
         else:
             if chunked_fetch:
                 cursor = self.connection.chunked_cursor()
@@ -659,10 +662,21 @@ class SQLCompilerOverrides:
                 cursor = self.connection.cursor()
 
         try:
-            await cursor.aexecute(sql, params)
+
+            old_closed = cursor.cursor._close
+
+            def f(*args, **kwargs):
+                print("HI!")
+                import traceback
+
+                traceback.print_stack()
+                old_closed()
+
+            cursor.cursor._close = f
+            await cursor.execute(sql, params)
         except Exception:
             # Might fail for server-side cursors (e.g. connection closed)
-            await cursor.aclose()
+            await cursor.close()
             raise
 
         if result_type == ROW_COUNT:
@@ -674,21 +688,21 @@ class SQLCompilerOverrides:
             return cursor
         elif result_type == SINGLE:
             try:
-                val = await cursor.afetchone()
+                val = await cursor.fetchone()
                 if val:
                     return val[0 : self.col_count]
                 return val
             finally:
                 # done with the cursor
-                await cursor.aclose()
+                await cursor.close()
         elif result_type == NO_RESULTS:
-            await cursor.aclose()
+            await cursor.close()
             return
         elif result_type == ROW_COUNT:
             try:
                 return cursor.rowcount
             finally:
-                await cursor.aclose()
+                await cursor.close()
         else:
             assert result_type == MULTI
             if ASYNC_TRUTH_MARKER:
@@ -971,7 +985,7 @@ class InsertCompilerOverrides:
         cols = []
         async with self.connection.acursor() as cursor:
             for sql, params in self.as_sql():
-                await cursor.aexecute(sql, params)
+                await cursor.execute(sql, params)
             if not self.returning_fields:
                 return []
             if (
@@ -1318,11 +1332,13 @@ async def acursor_iter(cursor, sentinel, col_count, itersize):
     Yield blocks of rows from a cursor and ensure the cursor is closed when
     done.
     """
+    assert cursor._closed is False
     try:
         while True:
-            rows = await cursor.afetchmany(itersize)
+            assert cursor._closed is False
+            rows = await cursor.fetchmany(itersize)
             if rows == sentinel:
                 break
             yield rows if col_count is None else [r[:col_count] for r in rows]
     finally:
-        await cursor.aclose()
+        await cursor.close()

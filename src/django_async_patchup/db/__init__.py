@@ -20,7 +20,9 @@ def modify_cxn_depth(f):
 
 
 def should_use_sync_fallback(async_variant):
-    return async_variant and (new_connection_block_depth.value == 0)
+    return False
+    # XXX FIX!
+    return async_variant and (getattr(new_connection_block_depth, "value", 0) == 0)
 
 
 commit_allowed = Local()

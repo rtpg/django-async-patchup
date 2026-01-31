@@ -14,7 +14,7 @@ class QueryOverrides:
         if using is None and connection is None:
             raise ValueError("Need either using or connection")
         if using:
-            connection = async_connections.get_connection(using)
+            connection = async_connections[using]
         return connection.ops.compiler(self.compiler)(
             self, connection, using, elide_empty
         )

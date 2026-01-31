@@ -21,9 +21,19 @@ class QuerySetOverrides:
     @generate_unasynced(sync_variant=QuerySet._fetch_all)
     async def _afetch_all(self):
         if self._result_cache is None:
+            print(self._iterable_class)
             self._result_cache = [elt async for elt in self._iterable_class(self)]
         if self._prefetch_related_lookups and not self._prefetch_done:
             await self._aprefetch_related_objects()
+
+    @just_patch(onto=(QuerySet, "__aiter__"))
+    def __aiter__(self):
+        async def generator():
+            await self._afetch_all()
+            for item in self._result_cache:
+                yield item
+
+        return generator()
 
     # @from_codegen(original=QuerySet._fetch_then_len)
     # def _fetch_then_len(self):
@@ -108,8 +118,10 @@ class ModelIterableOverrides:
     @just_patch(onto=(ModelIterable, "__aiter__"))
     def __aiter__(self):
         if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
-            return self._sync_to_async_generator()
+            return self._async_generator()
+            # return self._sync_to_async_generator()
         else:
+            print("USING AGENERATOR")
             return self._agenerator()
 
     @from_codegen(original=ModelIterable.__iter__)

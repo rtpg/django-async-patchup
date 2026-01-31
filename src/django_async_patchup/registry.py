@@ -39,19 +39,19 @@ class RegistryItem:
                 target_obj, name = self.original_copy
                 # original copy is the target
                 # our copy has the method def
-                print("PATCH ", target_obj, name, self.our_copy)
+                # print("PATCH ", target_obj, name, self.our_copy)
                 setattr(target_obj, name, self.our_copy)
             case "generate_unasynced":
                 owning_cls = get_owning_class(self.original_copy)
-                print(
-                    "Patching ",
-                    owning_cls,
-                    "with ",
-                    self.our_copy,
-                    "(",
-                    self.our_copy.__name__,
-                    ")",
-                )
+                # print(
+                #     "Patching ",
+                #     owning_cls,
+                #     "with ",
+                #     self.our_copy,
+                #     "(",
+                #     self.our_copy.__name__,
+                #     ")",
+                # )
                 setattr(owning_cls, self.our_copy.__name__, self.our_copy)
             case _:
                 assert False, self.label

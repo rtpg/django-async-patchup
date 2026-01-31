@@ -1,0 +1,15 @@
+<h1>Clients ({{ total_clients }} total)</h1>
+<table border="1">
+  <tr>
+    <th>Name</th>
+    <th>Total</th>
+  </tr>
+  {% for client in clients %}
+  <tr>
+    <td><a href="{% url 'biz_client' client.pk %}">{{ client.name }}</a></td>
+    <td>{{ client.total }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<p>(Rendered in {{ duration }}s)</p>

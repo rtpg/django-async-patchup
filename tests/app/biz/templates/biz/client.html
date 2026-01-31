@@ -1,0 +1,8 @@
+<h1>{{ client.name }}</h1>
+<p><a href="{% url 'biz_overview' %}">Back</a></p>
+<table border="1">
+<tr><th>Reference</th><th>Total</th></tr>
+{% for invoice in client.invoices %}
+<tr><td>{{ invoice.reference }}</td><td>{{ invoice.total }}</td></tr>
+{% endfor %}
+</table>

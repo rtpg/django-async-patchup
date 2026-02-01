@@ -4,6 +4,7 @@ from django_async_patchup.registry import (
     from_codegen,
     generate_unasynced,
 )
+from collections.abc import AsyncGenerator
 
 
 class SQLCompilerOverrides:
@@ -652,80 +653,95 @@ class SQLCompilerOverrides:
         # pdb.set_trace()
         if ASYNC_TRUTH_MARKER:
             if chunked_fetch:
-                cursor = await (await self.connection.achunked_cursor()).__aenter__()
+                cursor_cm = self.connection.achunked_cursor()
             else:
-                cursor = await self.connection.cursor().__aenter__()
+                cursor_cm = self.connection.cursor()
+
+            async with cursor_cm as cursor:
+                try:
+                    await cursor.execute(sql, params)
+                except Exception:
+                    raise
+
+                if result_type == ROW_COUNT:
+                    return cursor.rowcount
+                elif result_type == CURSOR:
+                    # Cannot return cursor outside of context manager
+                    return cursor
+                elif result_type == SINGLE:
+                    val = await cursor.fetchone()
+                    if val:
+                        return val[0 : self.col_count]
+                    return val
+                elif result_type == NO_RESULTS:
+                    return
+                else:
+                    assert result_type == MULTI
+                    result = acursor_iter(
+                        cursor,
+                        self.connection.features.empty_fetchmany_value,
+                        self.col_count if self.has_extra_select else None,
+                        chunk_size,
+                    )
+                    if not chunked_fetch or not self.connection.features.can_use_chunked_reads:
+                        # If we are using non-chunked reads, we return the same data
+                        # structure as normally, but ensure it is all read into memory
+                        # before going any further. Use chunked_fetch if requested,
+                        # unless the database doesn't support it.
+                        return [elt async for elt in result]
+                    return result
         else:
             if chunked_fetch:
                 cursor = self.connection.chunked_cursor()
             else:
                 cursor = self.connection.cursor()
 
-        try:
-
-            old_closed = cursor.cursor._close
-
-            def f(*args, **kwargs):
-                print("HI!")
-                import traceback
-
-                traceback.print_stack()
-                old_closed()
-
-            cursor.cursor._close = f
-            await cursor.execute(sql, params)
-        except Exception:
-            # Might fail for server-side cursors (e.g. connection closed)
-            await cursor.close()
-            raise
-
-        if result_type == ROW_COUNT:
             try:
-                return cursor.rowcount
-            finally:
+                cursor.execute(sql, params)
+            except Exception:
+                # Might fail for server-side cursors (e.g. connection closed)
                 cursor.close()
-        elif result_type == CURSOR:
-            return cursor
-        elif result_type == SINGLE:
-            try:
-                val = await cursor.fetchone()
-                if val:
-                    return val[0 : self.col_count]
-                return val
-            finally:
-                # done with the cursor
-                await cursor.close()
-        elif result_type == NO_RESULTS:
-            await cursor.close()
-            return
-        elif result_type == ROW_COUNT:
-            try:
-                return cursor.rowcount
-            finally:
-                await cursor.close()
-        else:
-            assert result_type == MULTI
-            if ASYNC_TRUTH_MARKER:
-                result = acursor_iter(
-                    cursor,
-                    self.connection.features.empty_fetchmany_value,
-                    self.col_count if self.has_extra_select else None,
-                    chunk_size,
-                )
+                raise
+
+            if result_type == ROW_COUNT:
+                try:
+                    return cursor.rowcount
+                finally:
+                    cursor.close()
+            elif result_type == CURSOR:
+                return cursor
+            elif result_type == SINGLE:
+                try:
+                    val = cursor.fetchone()
+                    if val:
+                        return val[0 : self.col_count]
+                    return val
+                finally:
+                    # done with the cursor
+                    cursor.close()
+            elif result_type == NO_RESULTS:
+                cursor.close()
+                return
+            elif result_type == ROW_COUNT:
+                try:
+                    return cursor.rowcount
+                finally:
+                    cursor.close()
             else:
+                assert result_type == MULTI
                 result = cursor_iter(
                     cursor,
                     self.connection.features.empty_fetchmany_value,
                     self.col_count if self.has_extra_select else None,
                     chunk_size,
                 )
-            if not chunked_fetch or not self.connection.features.can_use_chunked_reads:
-                # If we are using non-chunked reads, we return the same data
-                # structure as normally, but ensure it is all read into memory
-                # before going any further. Use chunked_fetch if requested,
-                # unless the database doesn't support it.
-                return [elt async for elt in result]
-            return result
+                if not chunked_fetch or not self.connection.features.can_use_chunked_reads:
+                    # If we are using non-chunked reads, we return the same data
+                    # structure as normally, but ensure it is all read into memory
+                    # before going any further. Use chunked_fetch if requested,
+                    # unless the database doesn't support it.
+                    return list(result)
+                return result
 
     @from_codegen(original=SQLCompiler.explain_query)
     def explain_query(self):
@@ -1332,10 +1348,8 @@ async def acursor_iter(cursor, sentinel, col_count, itersize):
     Yield blocks of rows from a cursor and ensure the cursor is closed when
     done.
     """
-    assert cursor._closed is False
     try:
         while True:
-            assert cursor._closed is False
             rows = await cursor.fetchmany(itersize)
             if rows == sentinel:
                 break

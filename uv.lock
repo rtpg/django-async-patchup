@@ -138,7 +138,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "django", specifier = "<6.0" },
+    { name = "django", specifier = "==5.2.10" },
     { name = "django-async-backend", git = "https://github.com/Arfey/django-async-backend" },
     { name = "libcst", specifier = ">=1.8.6" },
     { name = "pytest", specifier = ">=9.0.2" },

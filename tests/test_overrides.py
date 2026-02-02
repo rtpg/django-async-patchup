@@ -100,3 +100,13 @@ async def test_queryset_aaggregate():
         total_sum=Sum("total")
     )
     assert result["total_sum"] == Decimal("300.00")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_queryset_asave():
+    # _Very_ simple save coverage test
+    client = Client(name="Hello There")
+    await client.asave()
+    assert client.pk is not None
+    assert Client.objects.get(pk=client.pk).name == "Hello There"

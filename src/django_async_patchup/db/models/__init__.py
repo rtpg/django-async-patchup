@@ -1,6 +1,9 @@
 # XXX todo move to base
 from django.db.models.base import *
 from django_async_patchup.registry import from_codegen, generate_unasynced
+from django_async_patchup import ASYNC_TRUTH_MARKER
+from django_async_patchup.db import should_use_sync_fallback
+from asgiref.sync import sync_to_async
 
 
 class ModelOverrides:

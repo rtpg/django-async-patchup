@@ -13,6 +13,7 @@ dependencies = [
     "libcst>=1.8.6",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0.0",
     "pytest-django>=4.11.1",
 ]
 
@@ -26,3 +27,15 @@ django-async-backend = { git = "https://github.com/Arfey/django-async-backend" }
 [tool.pytest.ini_options]
 pythonpath = ["tests/app", "tests"]
 DJANGO_SETTINGS_MODULE = "app.async_django_project.settings"
+addopts = "--cov=src/django_async_patchup --cov-report=term-missing --cov-report=html"
+
+[tool.coverage.run]
+branch = true
+source = ["src/django_async_patchup"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

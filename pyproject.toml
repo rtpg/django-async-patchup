@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "django<6.0",
+    "django==5.2.10",
     "django-async-backend",
     "libcst>=1.8.6",
     "pytest>=9.0.2",

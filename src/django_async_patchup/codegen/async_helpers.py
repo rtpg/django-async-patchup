@@ -25,6 +25,7 @@ class UnasyncifyMethod(cst.CSTTransformer):
 
     def __init__(self):
         self.await_depth = 0
+        super().__init__()
 
     def visit_Await(self, node):
         self.await_depth += 1

@@ -4,14 +4,12 @@ from django_async_patchup.registry import RegistryItem, sync_methods
 from django_async_patchup import setup
 
 
-def test_codegen_matches():
-    print("Setup...")
+def test_codegen_matches(subtests):
     setup()
-    print("Checking...")
     items = sync_methods()
-    print(f"{len(items)} to check...")
     for item in items:
-        check_item(item)
+        with subtests.test(msg=f"Method {item.original_copy.__name__}"):
+            check_item(item)
 
 
 def check_item(item: RegistryItem):

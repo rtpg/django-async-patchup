@@ -64,6 +64,10 @@ def sync_methods() -> list[RegistryItem]:
     return [r for r in _registry if r.label == "from_codegen"]
 
 
+def unasynced_methods() -> list[RegistryItem]:
+    return [r for r in _registry if r.label == "generate_unasynced"]
+
+
 def async_methods() -> list[RegistryItem]:
     return [r for r in _registry if r.label in ["just_patch", "generate_unasynced"]]
 

@@ -37,8 +37,11 @@ class CollectorOverrides:
                 return []
         new_objs = []
         if ASYNC_TRUTH_MARKER:
-            model = objs.model
-            objs = [obj async for obj in objs]
+            if hasattr(objs, 'model'):
+                model = objs.model
+                objs = [obj async for obj in objs]
+            else:
+                model = objs[0].__class__
         else:
             model = objs[0].__class__
         instances = self.data[model]

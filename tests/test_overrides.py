@@ -15,14 +15,14 @@ django_async_patchup.setup()
 async def test_queryset_aiter():
     """Test QuerySet.__aiter__() override via async for."""
     # Create some test data using sync method wrapped for async context
-    await sync_to_async(Client.objects.create)(name="Client A")
-    await sync_to_async(Client.objects.create)(name="Client B")
+    await sync_to_async(Client.objects.create)(name="AIter_Client_A")
+    await sync_to_async(Client.objects.create)(name="AIter_Client_B")
 
-    # Test async iteration
-    clients = [c async for c in Client.objects.all()]
+    # Test async iteration (filter to avoid contamination from other test data)
+    clients = [c async for c in Client.objects.filter(name__startswith="AIter_Client_")]
     assert len(clients) == 2
     names = {c.name for c in clients}
-    assert names == {"Client A", "Client B"}
+    assert names == {"AIter_Client_A", "AIter_Client_B"}
 
 
 @pytest.mark.asyncio

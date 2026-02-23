@@ -4,7 +4,17 @@ from django_async_patchup.registry import (
     ASYNC_TRUTH_MARKER,
     from_codegen,
     generate_unasynced,
+    just_patch,
 )
+from django_async_backend.db.transaction import async_atomic, async_mark_for_rollback_on_error
+
+
+@just_patch(onto=Collector)
+async def abool(self, objs):
+    """Async-safe emptiness check for objs (list or QuerySet)."""
+    if isinstance(objs, (list, tuple)):
+        return bool(objs)
+    return await objs.aexists()
 
 
 class CollectorOverrides:
@@ -20,16 +30,19 @@ class CollectorOverrides:
         """
 
         if ASYNC_TRUTH_MARKER:
-            # XXX incorrect hack
             if not (await self.abool(objs)):
                 return []
         else:
             if not objs:
                 return []
         new_objs = []
-        model = objs[0].__class__
+        if ASYNC_TRUTH_MARKER:
+            model = objs.model
+            objs = [obj async for obj in objs]
+        else:
+            model = objs[0].__class__
         instances = self.data[model]
-        async for obj in objs:
+        for obj in objs:
             if obj not in instances:
                 new_objs.append(obj)
         instances.update(new_objs)
@@ -212,14 +225,14 @@ class CollectorOverrides:
         if len(self.data) == 1 and len(instances) == 1:
             instance = list(instances)[0]
             if self.can_fast_delete(instance):
-                with transaction.mark_for_rollback_on_error(self.using):
+                async with async_mark_for_rollback_on_error(self.using):
                     count = await sql.DeleteQuery(model).adelete_batch(
                         [instance.pk], self.using
                     )
                 setattr(instance, model._meta.pk.attname, None)
                 return count, {model._meta.label: count}
 
-        async with transaction.atomic(using=self.using, savepoint=False):
+        async with async_atomic(using=self.using, savepoint=False):
             # send pre_delete signals
             for model, obj in self.instances_with_model():
                 if not model._meta.auto_created:

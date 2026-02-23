@@ -21,7 +21,7 @@ def modify_cxn_depth(f):
 
 def should_use_sync_fallback(async_variant):
     return False
-    # XXX FIX!
+    # XXX Right now not clear to me if we need this
     return async_variant and (getattr(new_connection_block_depth, "value", 0) == 0)
 
 

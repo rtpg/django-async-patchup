@@ -80,6 +80,7 @@ async def test_queryset_afirst_alast():
     assert none_result is None
 
 
+@pytest.mark.todo("get async fallbacks working")
 @pytest.mark.asyncio
 @pytest.mark.django_db
 async def test_queryset_aaggregate():

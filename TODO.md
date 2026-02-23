@@ -1,0 +1,2 @@
+- we aren't implementing sync fallback stuff properly (see test_fallbacks)
+- there seems to be DB pollution (see test_queryset_aiter), likely a pytest-django-style thing though

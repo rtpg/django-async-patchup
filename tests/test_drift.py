@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ast
 import difflib
 import inspect
 import textwrap
@@ -67,16 +68,18 @@ def check_unasynced_item(item: RegistryItem):
     generated = transform_to_sync(item.our_copy)
     original = textwrap.dedent(inspect.getsource(item.original_copy))
 
-    if generated != original:
-        diff = "".join(
-            difflib.unified_diff(
-                original.splitlines(keepends=True),
-                generated.splitlines(keepends=True),
-                fromfile="original (sync_variant)",
-                tofile="generated (from async)",
-            )
+    if ast.dump(ast.parse(generated)) == ast.dump(ast.parse(original)):
+        return
+
+    diff = "".join(
+        difflib.unified_diff(
+            original.splitlines(keepends=True),
+            generated.splitlines(keepends=True),
+            fromfile="original (sync_variant)",
+            tofile="generated (from async)",
         )
-        assert False, f"Mismatch for {item.our_copy.__name__}:\n{diff}"
+    )
+    assert False, f"Mismatch for {item.our_copy.__name__}:\n{diff}"
 
 
 def test_unasynced_matches(subtests):

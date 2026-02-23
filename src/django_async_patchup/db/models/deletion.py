@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 from django.db.models.deletion import *
-from django_async_patchup.registry import from_codegen, generate_unasynced
+from django_async_patchup.registry import (
+    ASYNC_TRUTH_MARKER,
+    from_codegen,
+    generate_unasynced,
+)
 
 
 class CollectorOverrides:
@@ -14,9 +18,14 @@ class CollectorOverrides:
 
         Return a list of all objects that were not already collected.
         """
-        # XXX incorrect hack
-        if not (await self.abool(objs)):
-            return []
+
+        if ASYNC_TRUTH_MARKER:
+            # XXX incorrect hack
+            if not (await self.abool(objs)):
+                return []
+        else:
+            if not objs:
+                return []
         new_objs = []
         model = objs[0].__class__
         instances = self.data[model]

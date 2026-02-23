@@ -11,7 +11,7 @@ class ModelOverrides:
     @generate_unasynced(sync_variant=Model.save)
     async def asave(
         self,
-        *,
+        *args,
         force_insert=False,
         force_update=False,
         using=None,
@@ -25,6 +25,17 @@ class ModelOverrides:
         that the "save" must be an SQL insert or update (or equivalent for
         non-SQL backends), respectively. Normally, they should not be set.
         """
+        # RemovedInDjango60Warning.
+        if args:
+            force_insert, force_update, using, update_fields = self._parse_save_params(
+                *args,
+                method_name="save",
+                force_insert=force_insert,
+                force_update=force_update,
+                using=using,
+                update_fields=update_fields,
+            )
+
         if ASYNC_TRUTH_MARKER:
             if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
                 return await sync_to_async(self.save)(

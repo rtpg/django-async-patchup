@@ -251,12 +251,13 @@ class SQLCompilerOverrides:
             results = await self.aexecute_sql(
                 MULTI, chunked_fetch=chunked_fetch, chunk_size=chunk_size
             )
-        else:
-            # XXX wrong
-            # this is forcing evaluation of athing way to early
-            # instead of being an actual iterable
-            if isinstance(results, AsyncGenerator):
-                results = [r async for r in results]
+        if ASYNC_TRUTH_MARKER:
+            if results is not None:
+                # XXX wrong
+                # this is forcing evaluation of athing way to early
+                # instead of being an actual iterable
+                if isinstance(results, AsyncGenerator):
+                    results = [r async for r in results]
         fields = [s[0] for s in self.select[0 : self.col_count]]
         converters = self.get_converters(fields)
         rows = chain.from_iterable(results)
@@ -302,12 +303,8 @@ class SQLCompilerOverrides:
                 return iter([])
             else:
                 return
-        # if "pg_sleep" in sql:
-        #     raise ValueError("FOUND")
-        # import pdb
-
-        # pdb.set_trace()
         if ASYNC_TRUTH_MARKER:
+            # XXX we need to rework this one to match the sync code
             if chunked_fetch:
                 cursor_cm = self.connection.achunked_cursor()
             else:
@@ -354,7 +351,6 @@ class SQLCompilerOverrides:
                 cursor = self.connection.chunked_cursor()
             else:
                 cursor = self.connection.cursor()
-
             try:
                 cursor.execute(sql, params)
             except Exception:
@@ -367,9 +363,10 @@ class SQLCompilerOverrides:
                     return cursor.rowcount
                 finally:
                     cursor.close()
-            elif result_type == CURSOR:
+            if result_type == CURSOR:
+                # Give the caller the cursor to process and close.
                 return cursor
-            elif result_type == SINGLE:
+            if result_type == SINGLE:
                 try:
                     val = cursor.fetchone()
                     if val:
@@ -378,32 +375,23 @@ class SQLCompilerOverrides:
                 finally:
                     # done with the cursor
                     cursor.close()
-            elif result_type == NO_RESULTS:
+            if result_type == NO_RESULTS:
                 cursor.close()
                 return
-            elif result_type == ROW_COUNT:
-                try:
-                    return cursor.rowcount
-                finally:
-                    cursor.close()
-            else:
-                assert result_type == MULTI
-                result = cursor_iter(
-                    cursor,
-                    self.connection.features.empty_fetchmany_value,
-                    self.col_count if self.has_extra_select else None,
-                    chunk_size,
-                )
-                if (
-                    not chunked_fetch
-                    or not self.connection.features.can_use_chunked_reads
-                ):
-                    # If we are using non-chunked reads, we return the same data
-                    # structure as normally, but ensure it is all read into memory
-                    # before going any further. Use chunked_fetch if requested,
-                    # unless the database doesn't support it.
-                    return list(result)
-                return result
+        
+            result = cursor_iter(
+                cursor,
+                self.connection.features.empty_fetchmany_value,
+                self.col_count if self.has_extra_select else None,
+                chunk_size,
+            )
+            if not chunked_fetch or not self.connection.features.can_use_chunked_reads:
+                # If we are using non-chunked reads, we return the same data
+                # structure as normally, but ensure it is all read into memory
+                # before going any further. Use chunked_fetch if requested,
+                # unless the database doesn't support it.
+                return list(result)
+            return result
 
     @generate_unasynced(sync_variant=SQLCompiler.explain_query)
     async def aexplain_query(self):
@@ -713,10 +701,14 @@ async def acursor_iter(cursor, sentinel, col_count, itersize):
     done.
     """
     try:
-        while True:
-            rows = await cursor.fetchmany(itersize)
-            if rows == sentinel:
-                break
-            yield rows if col_count is None else [r[:col_count] for r in rows]
+        if ASYNC_TRUTH_MARKER:
+            while True:
+                rows = await cursor.fetchmany(itersize)
+                if rows == sentinel:
+                    break
+                yield rows if col_count is None else [r[:col_count] for r in rows]
+        else:
+            for rows in iter((lambda: cursor.fetchmany(itersize)), sentinel):
+                yield rows if col_count is None else [r[:col_count] for r in rows]
     finally:
         await cursor.close()

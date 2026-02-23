@@ -14,8 +14,10 @@ class QuerySetOverrides:
     @generate_unasynced(sync_variant=QuerySet._fetch_all)
     async def _afetch_all(self):
         if self._result_cache is None:
-            print(self._iterable_class)
-            self._result_cache = [elt async for elt in self._iterable_class(self)]
+            if ASYNC_TRUTH_MARKER:
+                self._result_cache = [elt async for elt in self._iterable_class(self)]
+            else:
+                self._result_cache = list(self._iterable_class(self))
         if self._prefetch_related_lookups and not self._prefetch_done:
             await self._aprefetch_related_objects()
 
@@ -76,13 +78,14 @@ class ModelIterableOverrides:
     def __aiter__(self):
         if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
             return self._async_generator()
-            # return self._sync_to_async_generator()
         else:
             print("USING AGENERATOR")
-            return self._agenerator()
+            return self.a__iter__()
 
+    # Yes the name for the following is silly, this gives
+    # me the right kinda naming needs for codegen
     @generate_unasynced(sync_variant=ModelIterable.__iter__)
-    async def _agenerator(self):
+    async def a__iter__(self):
         queryset = self.queryset
         db = queryset.db
         if ASYNC_TRUTH_MARKER:
@@ -190,7 +193,10 @@ class ModelIterableOverrides:
         ):
             limit = MAX_GET_RESULTS
             clone.query.set_limits(high=limit)
-        num = await clone._afetch_then_len()
+        if ASYNC_TRUTH_MARKER:
+            num = await clone._afetch_then_len()
+        else:
+            num = len(clone)
         if num == 1:
             return clone._result_cache[0]
         if not num:
@@ -362,11 +368,12 @@ class ModelIterableOverrides:
         objs = tuple(objs)
         if not all(obj._is_pk_set() for obj in objs):
             raise ValueError("All bulk_update() objects must have a primary key set.")
-        fields = [self.model._meta.get_field(name) for name in fields]
+        opts = self.model._meta
+        fields = [opts.get_field(name) for name in fields]
         if any(not f.concrete or f.many_to_many for f in fields):
             raise ValueError("bulk_update() can only be used with concrete fields.")
-        all_pk_fields = set(self.model._meta.pk_fields)
-        for parent in self.model._meta.all_parents:
+        all_pk_fields = set(opts.pk_fields)
+        for parent in opts.all_parents:
             all_pk_fields.update(parent._meta.pk_fields)
         if any(f in all_pk_fields for f in fields):
             raise ValueError("bulk_update() cannot be used with primary key fields.")
@@ -380,7 +387,7 @@ class ModelIterableOverrides:
         # and once in the WHEN. Each field will also have one CAST.
         self._for_write = True
         connection = connections[self.db]
-        max_batch_size = connection.ops.bulk_batch_size(["pk", "pk"] + fields, objs)
+        max_batch_size = connection.ops.bulk_batch_size([opts.pk, opts.pk] + fields, objs)
         batch_size = min(batch_size, max_batch_size) if batch_size else max_batch_size
         requires_casting = connection.features.requires_casted_case_in_updates
         batches = (objs[i : i + batch_size] for i in range(0, len(objs), batch_size))
@@ -603,7 +610,9 @@ class ModelIterableOverrides:
             if not id_list:
                 return {}
             filter_key = "{}__in".format(field_name)
-            batch_size = connections[self.db].features.max_query_params
+            max_params = connections[self.db].features.max_query_params or 0
+            num_fields = len(opts.pk_fields) if field_name == "pk" else 1
+            batch_size = max_params // num_fields
             id_list = tuple(id_list)
             # If the database has a limit on the number of query parameters
             # (e.g. SQLite), retrieve objects in batches if necessary.
@@ -702,11 +711,16 @@ class ModelIterableOverrides:
             else:
                 new_order_by.append(col)
         query.order_by = tuple(new_order_by)
-
-        # Clear any annotations so that they won't be present in subqueries.
-        query.annotations = {}
-        async with transaction.amark_for_rollback_on_error(using=self.db):
-            rows = await query.aget_compiler(self.db).aexecute_sql(ROW_COUNT)
+        # Clear SELECT clause as all annotation references were inlined by
+        # add_update_values() already.
+        query.clear_select_clause()
+        if ASYNC_TRUTH_MARKER:
+            # XXX should fix codegen to handle this case
+            async with transaction.amark_for_rollback_on_error(using=self.db):
+                rows = await query.aget_compiler(self.db).aexecute_sql(ROW_COUNT)
+        else:
+            with transaction.mark_for_rollback_on_error(using=self.db):
+                rows = query.get_compiler(self.db).execute_sql(ROW_COUNT)
         self._result_cache = None
         return rows
 

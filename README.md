@@ -35,3 +35,11 @@ async def get_invoice_summary(client: Client):
 ```
 
 More details will come as things coalesce
+
+
+Architecture
+------------
+
+This project works on the principle that our async implementations should "look like" our sync implementations.
+
+We have implemented various overrides, annotated with `@generate_unasynced`. In our test suites we confirm (through AST manipuation) that `@generate_unasynced` methods "look like" the methods they are copying.

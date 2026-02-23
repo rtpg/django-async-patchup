@@ -97,7 +97,7 @@ class SQLCompilerOverrides:
 
                 if self.query.select_for_update and features.has_select_for_update:
                     if (
-                        await self.connection.aget_autocommit()
+                        await self.connection.get_autocommit()
                         # Don't raise an exception when database doesn't
                         # support transactions, as it's a noop.
                         and features.supports_transactions
@@ -652,7 +652,10 @@ class SQLUpdateCompilerOverrides:
         non-empty query that is executed. Row counts for any subsequent,
         related queries are not available.
         """
-        row_count = await super().aexecute_sql(result_type)
+        if ASYNC_TRUTH_MARKER:
+            row_count = await SQLCompiler.aexecute_sql(self, result_type)
+        else:
+            row_count = super().execute_sql(result_type)
         is_empty = row_count is None
         row_count = row_count or 0
 

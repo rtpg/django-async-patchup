@@ -1,4 +1,6 @@
 from django.db.models.sql.subqueries import *
+from django.db.models.query import GET_ITERATOR_CHUNK_SIZE
+from django.db.models.sql.constants import ROW_COUNT
 
 from django_async_patchup.registry import from_codegen, generate_unasynced
 

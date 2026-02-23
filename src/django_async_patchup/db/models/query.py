@@ -874,7 +874,7 @@ class ModelIterableOverrides:
         """
         if ASYNC_TRUTH_MARKER:
 
-            connection = async_connections.get_connection(self.db)
+            connection = async_connections[self.db]
         else:
             connection = connections[self.db]
         ops = connection.ops

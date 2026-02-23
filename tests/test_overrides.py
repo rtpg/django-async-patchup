@@ -109,4 +109,4 @@ async def test_queryset_asave():
     client = Client(name="Hello There")
     await client.asave()
     assert client.pk is not None
-    assert Client.objects.get(pk=client.pk).name == "Hello There"
+    assert (await Client.objects.aget(pk=client.pk)).name == "Hello There"

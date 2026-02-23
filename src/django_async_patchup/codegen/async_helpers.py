@@ -41,12 +41,24 @@ class UnasyncifyMethod(cst.CSTTransformer):
         "acursor": "cursor",
     }
 
+    # Names that should be rewritten as attribute accesses (module.attr)
+    NAMES_TO_ATTRS = {
+        "async_atomic": ("transaction", "atomic"),
+        "async_mark_for_rollback_on_error": ("transaction", "mark_for_rollback_on_error"),
+    }
+
     def leave_Name(self, original_node, updated_node):
         # some names will get rewritten because we know
         # about them
         if updated_node.value in self.NAMES_TO_REWRITE:
             return updated_node.with_changes(
                 value=self.NAMES_TO_REWRITE[updated_node.value]
+            )
+        if updated_node.value in self.NAMES_TO_ATTRS:
+            module, attr = self.NAMES_TO_ATTRS[updated_node.value]
+            return cst.Attribute(
+                value=cst.Name(module),
+                attr=cst.Name(attr),
             )
         return updated_node
 

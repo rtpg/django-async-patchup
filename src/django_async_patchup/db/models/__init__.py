@@ -4,6 +4,7 @@ from django_async_patchup.registry import from_codegen, generate_unasynced
 from django_async_patchup import ASYNC_TRUTH_MARKER
 from django_async_patchup.db import should_use_sync_fallback
 from asgiref.sync import sync_to_async
+from django_async_backend.db.transaction import async_atomic, async_mark_for_rollback_on_error
 
 
 class ModelOverrides:
@@ -134,9 +135,9 @@ class ModelOverrides:
             )
         # A transaction isn't needed if one query is issued.
         if meta.parents:
-            context_manager = transaction.atomic(using=using, savepoint=False)
+            context_manager = async_atomic(using=using, savepoint=False)
         else:
-            context_manager = transaction.mark_for_rollback_on_error(using=using)
+            context_manager = async_mark_for_rollback_on_error(using=using)
         async with context_manager:
             parent_inserted = False
             if not raw:

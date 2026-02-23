@@ -501,7 +501,7 @@ class InsertCompilerOverrides:
         opts = self.query.get_meta()
         self.returning_fields = returning_fields
         cols = []
-        async with self.connection.acursor() as cursor:
+        async with self.connection.cursor() as cursor:
             for sql, params in self.as_sql():
                 await cursor.execute(sql, params)
             if not self.returning_fields:

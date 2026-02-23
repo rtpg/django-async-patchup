@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 from django.db.models.query import *
+from django.db.models import Manager
 from django_async_patchup.registry import from_codegen, generate_unasynced, just_patch
 from django_async_patchup import ASYNC_TRUTH_MARKER
 from django_async_patchup.db import should_use_sync_fallback
 from django.db.models.sql.constants import CURSOR
 
 from django_async_backend.db import async_connections
+from django_async_backend.db.transaction import async_atomic, async_mark_for_rollback_on_error
 
 
 class QuerySetOverrides:
@@ -35,12 +37,12 @@ class QuerySetOverrides:
         qs._fetch_all()
         return len(qs._result_cache)
 
-    @staticmethod
-    async def _afetch_then_len(qs):
+    @just_patch(onto=QuerySet)
+    async def _afetch_then_len(self):
         # TODO link to _fetch_then_len
         # RawQuerySet helper
-        await qs._afetch_all()
-        return len(qs._result_cache)
+        await self._afetch_all()
+        return len(self._result_cache)
 
     @generate_unasynced(sync_variant=QuerySet.aggregate)
     async def aaggregate(self, *args, **kwargs):
@@ -70,6 +72,35 @@ class QuerySetOverrides:
             kwargs[arg.default_alias] = arg
 
         return await self.query.chain().aget_aggregation(self.db, kwargs)
+
+
+@just_patch(onto=Manager)
+async def _ainsert(
+    self,
+    objs,
+    fields,
+    returning_fields=None,
+    raw=False,
+    using=None,
+    on_conflict=None,
+    update_fields=None,
+    unique_fields=None,
+):
+    """
+    Async version of Manager._insert.
+    Insert a new record for the given model.
+    """
+    self._for_write = True
+    if using is None:
+        using = self.db
+    query = sql.InsertQuery(
+        self.model,
+        on_conflict=on_conflict,
+        update_fields=update_fields,
+        unique_fields=unique_fields,
+    )
+    query.insert_values(fields, objs, raw=raw)
+    return await query.aget_compiler(using=using).aexecute_sql(returning_fields)
 
 
 class ModelIterableOverrides:
@@ -305,7 +336,7 @@ class ModelIterableOverrides:
         fields = [f for f in opts.concrete_fields if not f.generated]
         objs = list(objs)
         self._prepare_for_bulk_create(objs)
-        async with transaction.atomic(using=self.db, savepoint=False):
+        async with async_atomic(using=self.db, savepoint=False):
             objs_without_pk, objs_with_pk = partition(lambda o: o._is_pk_set(), objs)
             if objs_with_pk:
                 returned_columns = await self._abatched_insert(
@@ -408,7 +439,7 @@ class ModelIterableOverrides:
             updates.append(([obj.pk for obj in batch_objs], update_kwargs))
         rows_updated = 0
         queryset = self.using(self.db)
-        async with transaction.atomic(using=self.db, savepoint=False):
+        async with async_atomic(using=self.db, savepoint=False):
             for pks, update_kwargs in updates:
                 rows_updated += await queryset.filter(pk__in=pks).aupdate(
                     **update_kwargs
@@ -433,7 +464,7 @@ class ModelIterableOverrides:
             params = self._extract_model_params(defaults, **kwargs)
             # Try to create an object using passed params.
             try:
-                async with transaction.atomic(using=self.db):
+                async with async_atomic(using=self.db):
                     params = dict(resolve_callables(params))
                     return (await self.acreate(**params)), True
             except IntegrityError:
@@ -467,7 +498,7 @@ class ModelIterableOverrides:
             create_defaults = update_defaults
 
         self._for_write = True
-        async with transaction.atomic(using=self.db):
+        async with async_atomic(using=self.db):
             # Lock the row so that a concurrent update is blocked until
             # update_or_create() has performed its save.
             obj, created = await self.select_for_update().aget_or_create(
@@ -716,7 +747,7 @@ class ModelIterableOverrides:
         query.clear_select_clause()
         if ASYNC_TRUTH_MARKER:
             # XXX should fix codegen to handle this case
-            async with transaction.amark_for_rollback_on_error(using=self.db):
+            async with async_mark_for_rollback_on_error(using=self.db):
                 rows = await query.aget_compiler(self.db).aexecute_sql(ROW_COUNT)
         else:
             with transaction.mark_for_rollback_on_error(using=self.db):

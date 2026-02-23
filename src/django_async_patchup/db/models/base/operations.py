@@ -13,4 +13,4 @@ class BaseDatabaseOperationsOverrides:
         Given a cursor object that has just performed an INSERT...RETURNING
         statement into a table, return the newly created data.
         """
-        return await cursor.afetchone()
+        return await cursor.fetchone()

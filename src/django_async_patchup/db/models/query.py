@@ -772,9 +772,7 @@ class ModelIterableOverrides:
     @generate_unasynced(sync_variant=QuerySet._prefetch_related_objects)
     async def _aprefetch_related_objects(self):
         # This method can only be called once the result cache has been filled.
-        await aprefetch_related_objects(
-            self._result_cache, *self._prefetch_related_lookups
-        )
+        await aprefetch_related_objects(self._result_cache, *self._prefetch_related_lookups)
         self._prefetch_done = True
 
     ###################

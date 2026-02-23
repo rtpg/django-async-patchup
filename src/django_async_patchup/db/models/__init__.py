@@ -134,7 +134,6 @@ class ModelOverrides:
                 parent_inserted = await self._asave_parents(
                     cls, using, update_fields, force_insert
                 )
-
             updated = await self._asave_table(
                 raw,
                 cls,
@@ -267,9 +266,7 @@ class ModelOverrides:
             ]
             forced_update = update_fields or force_update
             pk_val = self._get_pk_val(meta)
-            updated = await self._ado_update(
-                base_qs, using, pk_val, values, update_fields, forced_update
-            )
+            updated = await self._ado_update(base_qs, using, pk_val, values, update_fields, forced_update)
             if force_update and not updated:
                 raise DatabaseError("Forced update did not affect any rows.")
             if update_fields and not updated:

@@ -9,7 +9,6 @@ class DeleteQueryOverrides:
     async def ado_query(self, table, where, using):
         self.alias_map = {table: self.alias_map[table]}
         self.where = where
-
         return await self.aget_compiler(using).aexecute_sql(ROW_COUNT)
 
     @generate_unasynced(sync_variant=DeleteQuery.delete_batch)

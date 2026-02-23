@@ -546,7 +546,6 @@ class InsertCompilerOverrides:
                         ),
                     )
                 ]
-
             else:
                 # Backend doesn't support returning fields and no auto-field
                 # that can be retrieved from `last_insert_id` was specified.
@@ -613,6 +612,11 @@ class SQLUpdateCompilerOverrides:
                         "Window expressions are not allowed in this query "
                         "(%s=%r)." % (field.name, val)
                     )
+                if isinstance(val, ColPairs):
+                    raise FieldError(
+                        "Composite primary keys expressions are not allowed "
+                        "in this query (%s=F('pk'))." % field.name
+                    )
             elif hasattr(val, "prepare_database_save"):
                 if field.remote_field:
                     val = val.prepare_database_save(field)
@@ -666,9 +670,7 @@ class SQLUpdateCompilerOverrides:
 
         for query in self.query.get_related_updates():
             # If the result_type is NO_RESULTS then the aux_row_count is None.
-            aux_row_count = await query.get_compiler(self.using).aexecute_sql(
-                result_type
-            )
+            aux_row_count = await query.get_compiler(self.using).aexecute_sql(result_type)
             if is_empty and aux_row_count:
                 # Returns the row count for any related updates as the number of
                 # rows updated.

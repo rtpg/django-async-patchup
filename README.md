@@ -43,3 +43,13 @@ Architecture
 This project works on the principle that our async implementations should "look like" our sync implementations.
 
 We have implemented various overrides, annotated with `@generate_unasynced`. In our test suites we confirm (through AST manipuation) that `@generate_unasynced` methods "look like" the methods they are copying.
+
+Strategy
+--------
+
+- Get to as much coverage as possible
+[![codecov](https://codecov.io/gh/rtpg/django-async-patchup/branch/main/graph/badge.svg?token=VW0FQFC9VY)](https://codecov.io/gh/rtpg/django-async-patchup)
+
+- Get releases that work for every minor Django release
+
+

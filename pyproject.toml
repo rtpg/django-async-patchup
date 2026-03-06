@@ -27,11 +27,12 @@ django-async-backend = { git = "https://github.com/Arfey/django-async-backend" }
 [tool.pytest.ini_options]
 pythonpath = ["tests/app", "tests"]
 DJANGO_SETTINGS_MODULE = "app.async_django_project.settings"
-addopts = "--cov=src/django_async_patchup --cov-report=term-missing --cov-report=html"
+addopts = "--cov=src/django_async_patchup --cov-report=term-missing --cov-report=xml"
 
 [tool.coverage.run]
 branch = true
 source = ["src/django_async_patchup"]
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = [

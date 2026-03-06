@@ -32,6 +32,7 @@ addopts = "--cov=src/django_async_patchup --cov-report=term-missing --cov-report
 [tool.coverage.run]
 branch = true
 source = ["src/django_async_patchup"]
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = [

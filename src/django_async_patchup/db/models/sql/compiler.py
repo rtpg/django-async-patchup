@@ -1,3 +1,4 @@
+import sys
 from django.db.models.sql.compiler import *
 from django_async_patchup.registry import (
     ASYNC_TRUTH_MARKER,
@@ -304,48 +305,70 @@ class SQLCompilerOverrides:
             else:
                 return
         if ASYNC_TRUTH_MARKER:
-            # XXX we need to rework this one to match the sync code
+            # Manually manage the cursor lifecycle like the sync path does,
+            # so that acursor_iter can own cursor cleanup for the lazy MULTI case.
             if chunked_fetch:
-                cursor_cm = self.connection.achunked_cursor()
+                cursor_cm = self.connection.chunked_cursor()
             else:
                 cursor_cm = self.connection.cursor()
 
-            async with cursor_cm as cursor:
-                try:
-                    await cursor.execute(sql, params)
-                except Exception:
-                    raise
+            cursor = await cursor_cm.__aenter__()
+            try:
+                await cursor.execute(sql, params)
+            except Exception:
+                await cursor_cm.__aexit__(*sys.exc_info())
+                raise
 
-                if result_type == ROW_COUNT:
+            if result_type == ROW_COUNT:
+                try:
                     return cursor.rowcount
-                elif result_type == CURSOR:
-                    # Cannot return cursor outside of context manager
-                    return cursor
-                elif result_type == SINGLE:
+                finally:
+                    await cursor_cm.__aexit__(None, None, None)
+            elif result_type == CURSOR:
+                # Caller takes ownership; cursor stays open.
+                return cursor
+            elif result_type == SINGLE:
+                try:
                     val = await cursor.fetchone()
                     if val:
                         return val[0 : self.col_count]
                     return val
-                elif result_type == NO_RESULTS:
-                    return
-                else:
-                    assert result_type == MULTI
-                    result = acursor_iter(
-                        cursor,
-                        self.connection.features.empty_fetchmany_value,
-                        self.col_count if self.has_extra_select else None,
-                        chunk_size,
-                    )
-                    if (
-                        not chunked_fetch
-                        or not self.connection.features.can_use_chunked_reads
-                    ):
-                        # If we are using non-chunked reads, we return the same data
-                        # structure as normally, but ensure it is all read into memory
-                        # before going any further. Use chunked_fetch if requested,
-                        # unless the database doesn't support it.
-                        return [elt async for elt in result]
-                    return result
+                finally:
+                    await cursor_cm.__aexit__(None, None, None)
+            elif result_type == NO_RESULTS:
+                await cursor_cm.__aexit__(None, None, None)
+                return
+            else:
+                assert result_type == MULTI
+                result = acursor_iter(
+                    cursor,
+                    self.connection.features.empty_fetchmany_value,
+                    self.col_count if self.has_extra_select else None,
+                    chunk_size,
+                )
+                if (
+                    not chunked_fetch
+                    or not self.connection.features.can_use_chunked_reads
+                ):
+                    # If we are using non-chunked reads, we return the same data
+                    # structure as normally, but ensure it is all read into memory
+                    # before going any further. Use chunked_fetch if requested,
+                    # unless the database doesn't support it.
+                    return [elt async for elt in result]
+                # chunked path: wrap in a generator that holds cursor_cm
+                # alive so its async-generator finalizer doesn't close the
+                # cursor before the caller exhausts the result.
+                async def _chunked_with_cm(inner, cm):
+                    try:
+                        async for chunk in inner:
+                            yield chunk
+                    finally:
+                        try:
+                            await cm.__aexit__(None, None, None)
+                        except Exception:
+                            pass
+
+                return _chunked_with_cm(result, cursor_cm)
         else:
             if chunked_fetch:
                 cursor = self.connection.chunked_cursor()

@@ -111,3 +111,94 @@ async def test_queryset_asave():
     await client.asave()
     assert client.pk is not None
     assert (await Client.objects.aget(pk=client.pk)).name == "Hello There"
+
+
+# --- aexecute_sql chunked_cursor pathway tests ---
+# These exercise SQLCompiler.aexecute_sql with chunked_fetch=True via aiterator(),
+# which triggers self.connection.achunked_cursor() (server-side cursor on PostgreSQL)
+# and returns an AsyncGenerator from acursor_iter() rather than a pre-fetched list.
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_basic_chunked_cursor():
+    """aiterator() uses chunked_fetch=True, exercising the achunked_cursor path."""
+    prefix = "ChunkBasic_"
+    names = [f"{prefix}{i}" for i in range(5)]
+    for name in names:
+        await sync_to_async(Client.objects.create)(name=name)
+
+    collected = []
+    async for client in Client.objects.filter(name__startswith=prefix).aiterator():
+        collected.append(client.name)
+
+    assert sorted(collected) == sorted(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_small_chunk_size_forces_multiple_fetchmany():
+    """chunk_size=1 forces acursor_iter to call fetchmany() once per row."""
+    prefix = "ChunkSmall_"
+    names = [f"{prefix}{i}" for i in range(4)]
+    for name in names:
+        await sync_to_async(Client.objects.create)(name=name)
+
+    collected = []
+    async for client in (
+        Client.objects.filter(name__startswith=prefix).aiterator(chunk_size=1)
+    ):
+        collected.append(client.name)
+
+    assert sorted(collected) == sorted(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_chunk_size_spans_multiple_chunks():
+    """Dataset larger than chunk_size verifies chunked reads across multiple fetchmany calls."""
+    prefix = "ChunkMulti_"
+    names = [f"{prefix}{i:02d}" for i in range(7)]
+    for name in names:
+        await sync_to_async(Client.objects.create)(name=name)
+
+    collected = []
+    async for client in (
+        Client.objects.filter(name__startswith=prefix).aiterator(chunk_size=3)
+    ):
+        collected.append(client.name)
+
+    assert sorted(collected) == sorted(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_empty_queryset_chunked_cursor():
+    """aiterator() on an empty result set returns no rows (EmptyResultSet or empty fetchmany)."""
+    collected = []
+    async for client in Client.objects.filter(
+        name="__nonexistent_chunked_test__"
+    ).aiterator():
+        collected.append(client)
+
+    assert collected == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_with_ordering_chunked_cursor():
+    """Chunked path preserves ORDER BY correctly across chunk boundaries."""
+    prefix = "ChunkOrder_"
+    names = [f"{prefix}{chr(ord('A') + i)}" for i in range(5)]
+    for name in names:
+        await sync_to_async(Client.objects.create)(name=name)
+
+    collected = []
+    async for client in (
+        Client.objects.filter(name__startswith=prefix)
+        .order_by("name")
+        .aiterator(chunk_size=2)
+    ):
+        collected.append(client.name)
+
+    assert collected == sorted(names)

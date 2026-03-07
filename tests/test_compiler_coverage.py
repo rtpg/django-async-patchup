@@ -1,0 +1,367 @@
+"""
+Tests targeting uncovered branches in compiler.py.
+
+Each test is labelled with the lines it aims to cover.
+"""
+import pytest
+from asgiref.sync import sync_to_async
+from decimal import Decimal
+from biz.models import Client, Invoice
+
+import django_async_patchup
+
+django_async_patchup.setup()
+
+
+# ── aas_sql: combinator branch (lines 35-43) ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_union_combinator():
+    """union() generates a UNION ALL combinator query (lines 35-43 in aas_sql)."""
+    await sync_to_async(Client.objects.create)(name="Comb_A")
+    await sync_to_async(Client.objects.create)(name="Comb_B")
+
+    qs1 = Client.objects.filter(name="Comb_A")
+    qs2 = Client.objects.filter(name="Comb_B")
+
+    collected = []
+    async for client in qs1.union(qs2).aiterator():
+        collected.append(client.name)
+
+    assert sorted(collected) == ["Comb_A", "Comb_B"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_intersection_combinator():
+    """intersection() exercises the combinator branch (lines 35-43 in aas_sql)."""
+    await sync_to_async(Client.objects.create)(name="Intersect_Both")
+    await sync_to_async(Client.objects.create)(name="Intersect_Only1")
+
+    qs1 = Client.objects.filter(name__startswith="Intersect_")
+    qs2 = Client.objects.filter(name="Intersect_Both")
+
+    collected = []
+    async for client in qs1.intersection(qs2).aiterator():
+        collected.append(client.name)
+
+    assert collected == ["Intersect_Both"]
+
+
+# ── aas_sql: DISTINCT branch (lines 75-80) ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_distinct():
+    """distinct() covers the DISTINCT branch in aas_sql (lines 75-80)."""
+    await sync_to_async(Client.objects.create)(name="Dist_Dup")
+    await sync_to_async(Client.objects.create)(name="Dist_Dup")
+    await sync_to_async(Client.objects.create)(name="Dist_Unique")
+
+    collected = []
+    async for client in (
+        Client.objects.filter(name__startswith="Dist_")
+        .order_by("name")
+        .distinct()
+        .aiterator()
+    ):
+        collected.append(client.name)
+
+    # DISTINCT without specifying fields deduplicates on all selected columns
+    # (including id), so all 3 rows are returned. The goal is to cover the
+    # DISTINCT code path in aas_sql, not to test deduplication semantics.
+    assert len(collected) == 3
+    assert "Dist_Unique" in collected
+
+
+# ── aas_sql: SELECT FOR UPDATE branch (lines 99-147) ─────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_select_for_update():
+    """select_for_update() inside atomic covers the FOR UPDATE branch (lines 99-147)."""
+    from django_async_backend.db.transaction import async_atomic
+
+    await sync_to_async(Client.objects.create)(name="ForUpdate_1")
+
+    collected = []
+    async with async_atomic():
+        async for client in (
+            Client.objects.filter(name__startswith="ForUpdate_")
+            .select_for_update()
+            .aiterator()
+        ):
+            collected.append(client.name)
+
+    assert collected == ["ForUpdate_1"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_select_for_update_skip_locked():
+    """select_for_update(skip_locked=True) exercises the skip_locked sub-branch."""
+    from django_async_backend.db.transaction import async_atomic
+
+    await sync_to_async(Client.objects.create)(name="SkipLocked_1")
+
+    collected = []
+    async with async_atomic():
+        async for client in (
+            Client.objects.filter(name__startswith="SkipLocked_")
+            .select_for_update(skip_locked=True)
+            .aiterator()
+        ):
+            collected.append(client.name)
+
+    assert collected == ["SkipLocked_1"]
+
+
+# ── aas_sql: GROUP BY branch (lines 161-168) ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_annotate_group_by():
+    """annotate() with Count generates GROUP BY (lines 161-168 in aas_sql)."""
+    from django.db.models import Count
+
+    client_a = await sync_to_async(Client.objects.create)(name="GroupBy_A")
+    client_b = await sync_to_async(Client.objects.create)(name="GroupBy_B")
+    await sync_to_async(Invoice.objects.create)(
+        client=client_a, reference="GB-1", total=Decimal("10.00")
+    )
+    await sync_to_async(Invoice.objects.create)(
+        client=client_a, reference="GB-2", total=Decimal("20.00")
+    )
+
+    results = {}
+    async for client in (
+        Client.objects.filter(name__startswith="GroupBy_")
+        .annotate(invoice_count=Count("invoices"))
+        .aiterator()
+    ):
+        results[client.name] = client.invoice_count
+
+    assert results["GroupBy_A"] == 2
+    assert results["GroupBy_B"] == 0
+
+
+# ── aas_sql: HAVING branch (lines 170-173) ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_having_clause():
+    """Filtering on an annotation produces HAVING (lines 170-173 in aas_sql)."""
+    from django.db.models import Count
+
+    client_a = await sync_to_async(Client.objects.create)(name="Having_A")
+    await sync_to_async(Client.objects.create)(name="Having_B")
+    await sync_to_async(Invoice.objects.create)(
+        client=client_a, reference="H-1", total=Decimal("10.00")
+    )
+
+    collected = []
+    async for client in (
+        Client.objects.filter(name__startswith="Having_")
+        .annotate(n=Count("invoices"))
+        .filter(n__gt=0)
+        .aiterator()
+    ):
+        collected.append(client.name)
+
+    assert collected == ["Having_A"]
+
+
+# ── aas_sql: explain_info branch (line 176) + aexplain_query (421-431) ───────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_compiler_aexplain_query():
+    """
+    Directly call aexplain_query() to cover the explain_info branch in aas_sql
+    (line 176) and the aexplain_query async generator body (lines 421-431).
+    """
+    from django.db.models.sql.query import ExplainInfo
+
+    await sync_to_async(Client.objects.create)(name="Explain_1")
+
+    qs = Client.objects.filter(name__startswith="Explain_")
+
+    def clone_query():
+        q = qs.query.clone()
+        q.explain_info = ExplainInfo(format=None, options={})
+        return q
+
+    q = await sync_to_async(clone_query)()
+    compiler = q.aget_compiler(using="default")
+
+    lines = []
+    async for line in compiler.aexplain_query():
+        lines.append(line)
+
+    assert len(lines) > 0
+    assert all(isinstance(line, str) for line in lines)
+
+
+# ── aexecute_sql: ROW_COUNT (lines 322-326) via aupdate ──────────────────────
+# ── SQLUpdateCompilerOverrides.aas_sql (606-668) + aexecute_sql (678-693) ────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_covers_row_count_and_update_compiler():
+    """
+    aupdate() exercises SQLUpdateCompilerOverrides (aas_sql + aexecute_sql) and
+    the ROW_COUNT result type in SQLCompiler.aexecute_sql (lines 322-326).
+    """
+    await sync_to_async(Client.objects.create)(name="Update_1")
+    await sync_to_async(Client.objects.create)(name="Update_2")
+
+    rows = await Client.objects.filter(name__startswith="Update_").aupdate(
+        name="Updated_Client"
+    )
+    assert rows == 2
+
+    assert await Client.objects.filter(name="Updated_Client").acount() == 2
+
+
+# ── SQLDeleteCompilerOverrides.aas_sql (578-595) via adelete ─────────────────
+# ── aexecute_sql: ROW_COUNT path also hit by _araw_delete ────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_covers_delete_compiler():
+    """
+    adelete() exercises SQLDeleteCompilerOverrides.aas_sql (lines 578-595) and
+    the ROW_COUNT result type via _araw_delete.
+    """
+    await sync_to_async(Client.objects.create)(name="Delete_1")
+    await sync_to_async(Client.objects.create)(name="Delete_2")
+
+    count, detail = await Client.objects.filter(name__startswith="Delete_").adelete()
+    assert count == 2
+
+    assert await Client.objects.filter(name__startswith="Delete_").acount() == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_with_cascade():
+    """
+    Cascading delete exercises the multi-table path in the delete collector,
+    covering more of adelete() and SQLDeleteCompilerOverrides.
+    """
+    client = await sync_to_async(Client.objects.create)(name="CascadeDelete_Client")
+    await sync_to_async(Invoice.objects.create)(
+        client=client, reference="CD-1", total=Decimal("5.00")
+    )
+    await sync_to_async(Invoice.objects.create)(
+        client=client, reference="CD-2", total=Decimal("10.00")
+    )
+
+    # Deleting client cascades to invoices
+    count, _ = await Client.objects.filter(name="CascadeDelete_Client").adelete()
+    assert count == 3  # 1 client + 2 invoices
+
+    assert await Invoice.objects.filter(reference__startswith="CD-").acount() == 0
+
+
+# ── aresults_iter: converters branch (line 266) via JSONField ─────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_json_field_triggers_converters():
+    """
+    JSONField has from_db_value, so iterating over Client (which has a metadata
+    JSONField) triggers the converters branch in aresults_iter (line 266).
+    """
+    await sync_to_async(Client.objects.create)(
+        name="JSON_Client", metadata={"key": "value", "count": 42}
+    )
+
+    collected = []
+    async for client in Client.objects.filter(name="JSON_Client").aiterator():
+        collected.append(client.metadata)
+
+    assert collected == [{"key": "value", "count": 42}]
+
+
+# ── aresults_iter: results=None path (line 252) ──────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aresults_iter_without_precomputed_results():
+    """
+    Calling aresults_iter() without a results argument triggers the internal
+    aexecute_sql() call (line 252 in aresults_iter).
+    """
+    await sync_to_async(Client.objects.create)(name="RIter_1")
+    await sync_to_async(Client.objects.create)(name="RIter_2")
+
+    qs = Client.objects.filter(name__startswith="RIter_")
+    compiler = qs.query.aget_compiler(using="default")
+
+    # Calling without results= triggers the aexecute_sql path inside aresults_iter
+    rows = list(await compiler.aresults_iter())
+    assert len(rows) == 2
+
+
+# ── aas_sql: LIMIT/OFFSET via sliced queryset ────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_sliced_queryset_limit_offset():
+    """
+    A sliced queryset adds LIMIT/OFFSET SQL (lines 195-200 in aas_sql).
+    Also covers the non-chunked MULTI path since sliced queries can't use
+    server-side cursors.
+    """
+    for i in range(5):
+        await sync_to_async(Client.objects.create)(name=f"Slice_{i:02d}")
+
+    collected = []
+    # Use a sliced queryset (which sets is_sliced=True → with_limit_offset=True)
+    async for client in (
+        Client.objects.filter(name__startswith="Slice_").order_by("name")[1:3].aiterator()
+    ):
+        collected.append(client.name)
+
+    assert collected == ["Slice_01", "Slice_02"]
+
+
+# ── aas_sql: order_by (covers the order_by branch, line 184+) ────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_with_no_matching_rows():
+    """aupdate() on an empty queryset returns 0 rows updated (exercises update compiler)."""
+    rows = await Client.objects.filter(name="__no_such_client__").aupdate(
+        name="irrelevant"
+    )
+    assert rows == 0
+
+
+# ── InsertCompilerOverrides: aexecute_sql with no returning_fields (line 531) ─
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acreate_exercises_insert_compiler():
+    """
+    acreate() goes through InsertCompilerOverrides.aexecute_sql with returning_fields
+    set (PostgreSQL RETURNING clause path, lines 538-546).
+    """
+    client = await Client.objects.acreate(name="ACreate_Test")
+    assert client.pk is not None
+    assert client.name == "ACreate_Test"

@@ -352,7 +352,7 @@ async def test_aupdate_with_no_matching_rows():
     assert rows == 0
 
 
-# ── InsertCompilerOverrides: aexecute_sql with no returning_fields (line 531) ─
+# ── InsertCompilerOverrides: aexecute_sql / aas_sql paths ────────────────────
 
 
 @pytest.mark.asyncio
@@ -360,8 +360,46 @@ async def test_aupdate_with_no_matching_rows():
 async def test_acreate_exercises_insert_compiler():
     """
     acreate() goes through InsertCompilerOverrides.aexecute_sql with returning_fields
-    set (PostgreSQL RETURNING clause path, lines 538-546).
+    set (PostgreSQL RETURNING clause path, lines 538-546) and aas_sql single-object
+    bulk_insert_sql branch (lines 484-488).
     """
     client = await Client.objects.acreate(name="ACreate_Test")
     assert client.pk is not None
     assert client.name == "ACreate_Test"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_create_multiple_objects_covers_bulk_returning_rows():
+    """
+    abulk_create() with multiple objects triggers the can_return_rows_from_bulk_insert
+    + len(objs) > 1 path in aexecute_sql (lines 532-537), and the bulk_insert_sql
+    branch in aas_sql (lines 484-488).
+    """
+    objs = await Client.objects.abulk_create([
+        Client(name="Bulk_A"),
+        Client(name="Bulk_B"),
+        Client(name="Bulk_C"),
+    ])
+    assert len(objs) == 3
+    assert all(obj.pk is not None for obj in objs)
+    assert await Client.objects.filter(name__startswith="Bulk_").acount() == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_create_ignore_conflicts_covers_no_returning_path():
+    """
+    abulk_create(ignore_conflicts=True) calls _ainsert without returning_fields,
+    covering the can_bulk path in aas_sql (lines 504-508, including the
+    on_conflict_suffix_sql branch at 506-507) and the early return at
+    aexecute_sql line 530-531.
+    """
+    # Create one first to cause a conflict on name if we had a unique constraint,
+    # but here we just exercise the ignore_conflicts SQL path.
+    objs = await Client.objects.abulk_create(
+        [Client(name="IgnoreConflict_A"), Client(name="IgnoreConflict_B")],
+        ignore_conflicts=True,
+    )
+    # ignore_conflicts=True means returning_fields is not set → PKs not populated
+    assert await Client.objects.filter(name__startswith="IgnoreConflict_").acount() == 2

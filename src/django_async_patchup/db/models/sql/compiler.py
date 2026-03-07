@@ -525,7 +525,7 @@ class InsertCompilerOverrides:
         self.returning_fields = returning_fields
         cols = []
         async with self.connection.cursor() as cursor:
-            for sql, params in self.as_sql():
+            for sql, params in (await self.aas_sql()):
                 await cursor.execute(sql, params)
             if not self.returning_fields:
                 return []

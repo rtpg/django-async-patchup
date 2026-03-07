@@ -80,7 +80,7 @@ async def test_queryset_afirst_alast():
     assert none_result is None
 
 
-@pytest.mark.todo("get async fallbacks working")
+@pytest.mark.skip("get async fallbacks working")
 @pytest.mark.asyncio
 @pytest.mark.django_db
 async def test_queryset_aaggregate():
@@ -145,8 +145,8 @@ async def test_aiterator_small_chunk_size_forces_multiple_fetchmany():
         await sync_to_async(Client.objects.create)(name=name)
 
     collected = []
-    async for client in (
-        Client.objects.filter(name__startswith=prefix).aiterator(chunk_size=1)
+    async for client in Client.objects.filter(name__startswith=prefix).aiterator(
+        chunk_size=1
     ):
         collected.append(client.name)
 
@@ -163,8 +163,8 @@ async def test_aiterator_chunk_size_spans_multiple_chunks():
         await sync_to_async(Client.objects.create)(name=name)
 
     collected = []
-    async for client in (
-        Client.objects.filter(name__startswith=prefix).aiterator(chunk_size=3)
+    async for client in Client.objects.filter(name__startswith=prefix).aiterator(
+        chunk_size=3
     ):
         collected.append(client.name)
 

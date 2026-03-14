@@ -190,7 +190,7 @@ class QueryOverrides:
         outer_query.select_related = False
         if ASYNC_TRUTH_MARKER:
             compiler = outer_query.aget_compiler(using, elide_empty=elide_empty)
-        else:
+        else:  # pragma: no cover
             compiler = outer_query.get_compiler(using, elide_empty=elide_empty)
         result = await compiler.aexecute_sql(SINGLE)
         if result is None:
@@ -218,7 +218,7 @@ class QueryOverrides:
         q = self.exists()
         if ASYNC_TRUTH_MARKER:
             compiler = q.aget_compiler(using=using)
-        else:
+        else:  # pragma: no cover
             compiler = q.get_compiler(using=using)
         return await compiler.ahas_results()
 
@@ -234,6 +234,6 @@ class QueryOverrides:
         q.explain_info = ExplainInfo(format, options)
         if ASYNC_TRUTH_MARKER:
             compiler = q.aget_compiler(using=using)
-        else:
+        else:  # pragma: no cover
             compiler = q.get_compiler(using=using)
         return "\n".join(await compiler.aexplain_query())

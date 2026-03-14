@@ -2,7 +2,9 @@
 """Extended coverage tests for django_async_patchup."""
 import pytest
 from decimal import Decimal
+from asgiref.sync import sync_to_async
 from biz.models import Client, Invoice, Person, Employee
+from django.db.models import Count
 
 import django_async_patchup
 
@@ -509,3 +511,444 @@ async def test_abulk_update_no_fields_raises():
     client = await Client.objects.acreate(name="BulkUpd No Fields")
     with pytest.raises(ValueError, match="Field names must be given"):
         await Client.objects.abulk_update([client], fields=[])
+
+
+# ---------------------------------------------------------------------------
+# hello() — __init__.py line 27
+# ---------------------------------------------------------------------------
+
+def test_hello_runs(capsys):
+    """hello() prints Hi — covers __init__.py line 27."""
+    django_async_patchup.hello()
+    captured = capsys.readouterr()
+    assert "Hi" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# acount() with pre-evaluated queryset — query.py cached path
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acount_uses_result_cache_when_already_evaluated():
+    """acount() returns len(_result_cache) when queryset is already evaluated."""
+    await Client.objects.acreate(name="CacheCount_A")
+    await Client.objects.acreate(name="CacheCount_B")
+    qs = Client.objects.filter(name__startswith="CacheCount_")
+    # Pre-evaluate to populate _result_cache
+    await qs._afetch_all()
+    assert qs._result_cache is not None
+    # acount should now use the cache, not hit the DB
+    count = await qs.acount()
+    assert count == 2
+
+
+# ---------------------------------------------------------------------------
+# abulk_create on a multi-table-inherited model — query.py lines 316-317
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_create_rejects_multi_table_inherited_model():
+    """abulk_create raises ValueError for MTI models (can't bulk create across tables)."""
+    with pytest.raises(ValueError, match="multi-table inherited"):
+        await Employee.objects.abulk_create([Employee(first_name="MTI_A", department="Eng")])
+
+
+# ---------------------------------------------------------------------------
+# aget() with combinator + filter args — query.py lines 210-213
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aget_raises_on_combinator_with_filters():
+    """aget(*args) on a union queryset raises NotSupportedError."""
+    from django.db.utils import NotSupportedError
+    qs1 = Client.objects.filter(name="GetCombinator_X")
+    qs2 = Client.objects.filter(name="GetCombinator_Y")
+    combined = qs1.union(qs2)
+    with pytest.raises(NotSupportedError, match="union"):
+        await combined.aget(name="GetCombinator_X")
+
+
+# ===========================================================================
+# registry.py — lines 64, 76-84
+# ===========================================================================
+
+def test_sync_methods_returns_list():
+    from django_async_patchup.registry import sync_methods
+    result = sync_methods()
+    assert isinstance(result, list)
+
+
+def test_from_codegen_registers_and_returns_function():
+    from django_async_patchup.registry import from_codegen, _registry
+    sentinel = object()
+    len_before = len(_registry)
+
+    @from_codegen(original=sentinel)
+    def sample_func():
+        pass
+
+    try:
+        assert len(_registry) == len_before + 1
+        item = _registry[-1]
+        assert item.label == "from_codegen"
+        assert item.original_copy is sentinel
+        assert item.our_copy is sample_func
+    finally:
+        _registry.pop()
+
+
+# ===========================================================================
+# transaction.py — lines 1-27
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_mark_for_rollback_on_error_no_exception():
+    from django_async_patchup.db.models.transaction import MarkForRollbackOnError
+    m = MarkForRollbackOnError(using="default")
+    async with m:
+        pass  # __aexit__ with exc_val=None is a no-op
+
+
+def test_mark_for_rollback_sync_enter_exit():
+    from django_async_patchup.db.models.transaction import MarkForRollbackOnError
+    m = MarkForRollbackOnError(using="default")
+    with m:
+        pass  # __enter__ returns self, __exit__ with no exc does nothing
+
+
+def test_amark_for_rollback_on_error_factory():
+    from django_async_patchup.db.models.transaction import (
+        amark_for_rollback_on_error,
+        MarkForRollbackOnError,
+    )
+    m = amark_for_rollback_on_error(using="default")
+    assert isinstance(m, MarkForRollbackOnError)
+
+
+# ===========================================================================
+# db/__init__.py — lines 14-60, 70-88
+# ===========================================================================
+
+def test_modify_cxn_depth():
+    from django_async_patchup.db import modify_cxn_depth, new_connection_block_depth
+    original = new_connection_block_depth.value
+    modify_cxn_depth(lambda v: v + 1)
+    assert new_connection_block_depth.value == original + 1
+    modify_cxn_depth(lambda v: v - 1)  # restore
+
+
+def test_is_commit_allowed_returns_bool():
+    from django_async_patchup.db import is_commit_allowed
+    assert isinstance(is_commit_allowed(), bool)
+
+
+def test_set_async_db_commit_permission():
+    from django_async_patchup.db import set_async_db_commit_permission, is_commit_allowed
+    with set_async_db_commit_permission(True):
+        assert is_commit_allowed() is True
+    with set_async_db_commit_permission(False):
+        assert is_commit_allowed() is False
+
+
+def test_allow_async_db_commits():
+    from django_async_patchup.db import allow_async_db_commits, is_commit_allowed
+    with allow_async_db_commits():
+        assert is_commit_allowed() is True
+
+
+def test_block_async_db_commits():
+    from django_async_patchup.db import block_async_db_commits, is_commit_allowed
+    with block_async_db_commits():
+        assert is_commit_allowed() is False
+
+
+def test_new_connection_init_with_force_rollback():
+    from django_async_patchup.db import new_connection
+    conn = new_connection("default", force_rollback=True)
+    assert conn.force_rollback is True
+
+
+def test_new_connection_init_commits_blocked_raises():
+    from django_async_patchup.db import new_connection, block_async_db_commits
+    with block_async_db_commits():
+        with pytest.raises(ValueError, match="blocked"):
+            new_connection("default")
+
+
+def test_new_connection_sync_enter_exit():
+    from django_async_patchup.db import new_connection
+    conn = new_connection("default", force_rollback=True)
+    with conn:
+        pass  # __enter__ returns None (force_rollback=True path), __exit__ is no-op
+
+
+# ===========================================================================
+# aget_or_create (query.py ~451-475)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aget_or_create_creates_new_object():
+    obj, created = await Client.objects.aget_or_create(name="GetOrCreate_NewXYZ")
+    assert created is True
+    assert obj.pk is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aget_or_create_returns_existing():
+    await Client.objects.acreate(name="GetOrCreate_ExistingXYZ")
+    obj, created = await Client.objects.aget_or_create(name="GetOrCreate_ExistingXYZ")
+    assert created is False
+
+
+# ===========================================================================
+# aupdate_or_create (query.py ~479-531)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_or_create_creates():
+    obj, created = await Client.objects.aupdate_or_create(
+        name="UOC_NewXYZ", defaults={"metadata": {"x": 1}}
+    )
+    assert created is True
+    assert obj.metadata == {"x": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_or_create_updates_existing():
+    await Client.objects.acreate(name="UOC_ExistingXYZ")
+    obj, created = await Client.objects.aupdate_or_create(
+        name="UOC_ExistingXYZ", defaults={"metadata": {"updated": True}}
+    )
+    assert created is False
+    assert obj.metadata == {"updated": True}
+
+
+# ===========================================================================
+# aearliest / alatest (query.py ~535-578)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aearliest_by_field():
+    await Client.objects.acreate(name="EarlyTest_Z")
+    await Client.objects.acreate(name="EarlyTest_A")
+    obj = await Client.objects.filter(name__startswith="EarlyTest_").aearliest("name")
+    assert obj.name == "EarlyTest_A"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_alatest_by_field():
+    await Client.objects.acreate(name="LateTest_A")
+    await Client.objects.acreate(name="LateTest_Z")
+    obj = await Client.objects.filter(name__startswith="LateTest_").alatest("name")
+    assert obj.name == "LateTest_Z"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aearliest_sliced_raises():
+    with pytest.raises(TypeError, match="slice"):
+        await Client.objects.all()[:3].aearliest("name")
+
+
+# ===========================================================================
+# ain_bulk (query.py ~608-659)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_ain_bulk_empty_list():
+    result = await Client.objects.ain_bulk([])
+    assert result == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_ain_bulk_with_ids():
+    c1 = await Client.objects.acreate(name="InBulk_AXY")
+    c2 = await Client.objects.acreate(name="InBulk_BXY")
+    result = await Client.objects.ain_bulk([c1.pk, c2.pk])
+    assert result[c1.pk].name == "InBulk_AXY"
+    assert result[c2.pk].name == "InBulk_BXY"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_ain_bulk_no_id_list_returns_all():
+    await Client.objects.acreate(name="InBulkAll_XY")
+    result = await Client.objects.filter(name__startswith="InBulkAll_").ain_bulk()
+    assert len(result) >= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_ain_bulk_non_unique_field_raises():
+    with pytest.raises(ValueError, match="unique field"):
+        await Client.objects.ain_bulk(field_name="name")
+
+
+# ===========================================================================
+# adelete error cases (query.py ~661-693)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_sliced_raises():
+    with pytest.raises(TypeError, match="limit"):
+        await Client.objects.all()[:3].adelete()
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_distinct_fields_raises():
+    with pytest.raises(TypeError, match="distinct"):
+        await Client.objects.distinct("name").adelete()
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_values_raises():
+    with pytest.raises(TypeError, match="values"):
+        await Client.objects.values("name").adelete()
+
+
+# ===========================================================================
+# aupdate error cases (query.py ~710-721)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_sliced_raises():
+    with pytest.raises(TypeError, match="slice"):
+        await Client.objects.all()[:3].aupdate(name="X")
+
+
+# ===========================================================================
+# aexists with result cache / acontains (query.py ~785-815)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aexists_with_nonempty_result_cache():
+    await Client.objects.acreate(name="ExistsCache_XY")
+    qs = Client.objects.filter(name__startswith="ExistsCache_XY")
+    await qs._afetch_all()
+    assert qs._result_cache is not None
+    assert await qs.aexists() is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aexists_with_empty_result_cache():
+    qs = Client.objects.filter(name="ExistsCache_NeverExists_XYZQ")
+    await qs._afetch_all()
+    assert qs._result_cache == []
+    assert await qs.aexists() is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acontains_returns_false_for_wrong_model():
+    client = await Client.objects.acreate(name="ContainsWrong_Client")
+    inv = await Invoice.objects.acreate(
+        client=client, reference="CW-INV-001", total=Decimal("1.00")
+    )
+    result = await Client.objects.acontains(inv)
+    assert result is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acontains_values_queryset_raises():
+    client = await Client.objects.acreate(name="ContainsVals_X")
+    with pytest.raises(TypeError, match="values"):
+        await Client.objects.values("name").acontains(client)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acontains_unsaved_object_raises():
+    unsaved = Client(name="ContainsUnsaved")
+    with pytest.raises(ValueError, match="unsaved"):
+        await Client.objects.acontains(unsaved)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acontains_with_result_cache():
+    c = await Client.objects.acreate(name="ContainsCache_XY")
+    qs = Client.objects.filter(name__startswith="ContainsCache_XY")
+    await qs._afetch_all()
+    assert qs._result_cache is not None
+    assert await qs.acontains(c) is True
+
+
+# ===========================================================================
+# asave error paths (models/__init__.py lines 71, 257)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_invalid_update_fields_raises():
+    c = await Client.objects.acreate(name="BadUpdateField")
+    with pytest.raises(ValueError, match="do not exist"):
+        await c.asave(update_fields=["nonexistent_field"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_force_update_no_pk_raises():
+    c = Client(name="ForceUpdateNoPK")
+    with pytest.raises(ValueError, match="Cannot force an update in save"):
+        await c.asave(force_update=True)
+
+
+# ===========================================================================
+# abulk_update error paths (query.py ~395-410)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_update_obj_without_pk_raises():
+    unsaved = Client(name="NoPKBulk")
+    with pytest.raises(ValueError, match="primary key"):
+        await Client.objects.abulk_update([unsaved], fields=["name"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_update_pk_field_raises():
+    c = await Client.objects.acreate(name="PKFieldBulk")
+    with pytest.raises(ValueError, match="primary key fields"):
+        await Client.objects.abulk_update([c], fields=["id"])
+
+
+# ===========================================================================
+# abulk_create edge cases (query.py ~318-356)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_create_empty_list():
+    result = await Client.objects.abulk_create([])
+    assert result == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_create_with_explicit_pk():
+    explicit_pk = 9876543
+    await Client.objects.filter(pk=explicit_pk).adelete()
+    try:
+        objs = await Client.objects.abulk_create([Client(pk=explicit_pk, name="ExplicitPK_Test")])
+        assert len(objs) == 1
+    finally:
+        await Client.objects.filter(pk=explicit_pk).adelete()

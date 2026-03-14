@@ -32,7 +32,7 @@ class CollectorOverrides:
         if ASYNC_TRUTH_MARKER:
             if not (await self.abool(objs)):
                 return []
-        else:
+        else:  # pragma: no cover
             if not objs:
                 return []
         new_objs = []
@@ -42,7 +42,7 @@ class CollectorOverrides:
                 objs = [obj async for obj in objs]
             else:
                 model = objs[0].__class__
-        else:
+        else:  # pragma: no cover
             model = objs[0].__class__
         instances = self.data[model]
         for obj in objs:

@@ -18,7 +18,7 @@ class QuerySetOverrides:
         if self._result_cache is None:
             if ASYNC_TRUTH_MARKER:
                 self._result_cache = [elt async for elt in self._iterable_class(self)]
-            else:
+            else:  # pragma: no cover
                 self._result_cache = list(self._iterable_class(self))
         if self._prefetch_related_lookups and not self._prefetch_done:
             await self._aprefetch_related_objects()
@@ -121,7 +121,7 @@ class ModelIterableOverrides:
         db = queryset.db
         if ASYNC_TRUTH_MARKER:
             compiler = queryset.query.aget_compiler(using=db)
-        else:
+        else:  # pragma: no cover
             compiler = queryset.query.get_compiler(using=db)
         # Execute the query. This will also fill compiler.select, klass_info,
         # and annotations.
@@ -226,7 +226,7 @@ class ModelIterableOverrides:
             clone.query.set_limits(high=limit)
         if ASYNC_TRUTH_MARKER:
             num = await clone._afetch_then_len()
-        else:
+        else:  # pragma: no cover
             num = len(clone)
         if num == 1:
             return clone._result_cache[0]
@@ -749,7 +749,7 @@ class ModelIterableOverrides:
             # XXX should fix codegen to handle this case
             async with async_mark_for_rollback_on_error(using=self.db):
                 rows = await query.aget_compiler(self.db).aexecute_sql(ROW_COUNT)
-        else:
+        else:  # pragma: no cover
             with transaction.mark_for_rollback_on_error(using=self.db):
                 rows = query.get_compiler(self.db).execute_sql(ROW_COUNT)
         self._result_cache = None
@@ -875,7 +875,7 @@ class ModelIterableOverrides:
         if ASYNC_TRUTH_MARKER:
 
             connection = async_connections[self.db]
-        else:
+        else:  # pragma: no cover
             connection = connections[self.db]
         ops = connection.ops
         max_batch_size = max(ops.bulk_batch_size(fields, objs), 1)

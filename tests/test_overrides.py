@@ -4,6 +4,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from biz.models import Client, Invoice
 from decimal import Decimal
+from django.db.models import Count, Sum
 
 import django_async_patchup
 
@@ -284,3 +285,41 @@ async def test_model_subclass_with_both_overrides_each_called_independently():
     await obj2.asave()
     assert ClientWithBoth.asave_called
     assert not ClientWithBoth.save_called
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_with_positional_arg_covers_default_alias_path():
+    """aaggregate(Count('id')) — positional arg triggers default_alias loop (lines 68-72)."""
+    await sync_to_async(Client.objects.create)(name="AggPos_A")
+    await sync_to_async(Client.objects.create)(name="AggPos_B")
+    result = await Client.objects.filter(name__startswith="AggPos_").aaggregate(Count("id"))
+    assert result["id__count"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_positional_complex_raises_type_error():
+    """aaggregate with a complex expression that has no default_alias raises TypeError (line 71)."""
+    from django.db.models import ExpressionWrapper, IntegerField
+    expr = ExpressionWrapper(Count("id") + Count("id"), output_field=IntegerField())
+    with pytest.raises(TypeError, match="Complex aggregates require an alias"):
+        await Client.objects.aaggregate(expr)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_select_related_async_iteration_covers_related_populators():
+    """select_related() with async iteration covers rel_populators path (query.py line 165)."""
+    client = await sync_to_async(Client.objects.create)(name="SR_Client")
+    await sync_to_async(Invoice.objects.create)(
+        client=client, reference="SR_INV_001", total=Decimal("99.99")
+    )
+    invoices = [
+        inv
+        async for inv in Invoice.objects.select_related("client").filter(
+            reference="SR_INV_001"
+        )
+    ]
+    assert len(invoices) == 1
+    assert invoices[0].client.name == "SR_Client"

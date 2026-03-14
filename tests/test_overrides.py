@@ -202,3 +202,85 @@ async def test_aiterator_with_ordering_chunked_cursor():
         collected.append(client.name)
 
     assert collected == sorted(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_model_subclass_with_save_override_gets_asave():
+    """Model overriding save() but not asave() → __init_subclass__ auto-creates asave (line 25)."""
+    from django.db import models
+
+    class ClientWithSave(Client):
+        save_called = False
+
+        def save(self, *args, **kwargs):
+            ClientWithSave.save_called = True
+            super().save(*args, **kwargs)
+
+        class Meta:
+            proxy = True
+            app_label = "biz"
+
+    obj = ClientWithSave(name="SaveOverride")
+    await obj.asave()
+    assert ClientWithSave.save_called
+    assert obj.pk is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_model_subclass_with_asave_override_gets_save():
+    """Model overriding asave() but not save() → __init_subclass__ auto-creates save (line 28)."""
+
+    class ClientWithAsave(Client):
+        asave_called = False
+
+        async def asave(self, *args, **kwargs):
+            ClientWithAsave.asave_called = True
+            await super().asave(*args, **kwargs)
+
+        class Meta:
+            proxy = True
+            app_label = "biz"
+
+    obj = ClientWithAsave(name="AsaveOverride")
+    await sync_to_async(obj.save)()
+    assert ClientWithAsave.asave_called
+    assert obj.pk is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_model_subclass_with_both_overrides_each_called_independently():
+    """Model overriding both save and asave — each method is called for its own path, not the other."""
+
+    class ClientWithBoth(Client):
+        save_called = False
+        asave_called = False
+
+        def save(self, *args, **kwargs):
+            ClientWithBoth.save_called = True
+            super().save(*args, **kwargs)
+
+        async def asave(self, *args, **kwargs):
+            ClientWithBoth.asave_called = True
+            await super().asave(*args, **kwargs)
+
+        class Meta:
+            proxy = True
+            app_label = "biz"
+
+    # sync save: only save_called, not asave_called
+    obj1 = ClientWithBoth(name="BothSync")
+    await sync_to_async(obj1.save)()
+    assert ClientWithBoth.save_called
+    assert not ClientWithBoth.asave_called
+
+    # reset
+    ClientWithBoth.save_called = False
+
+    # async asave: only asave_called, not save_called
+    obj2 = ClientWithBoth(name="BothAsync")
+    await obj2.asave()
+    assert ClientWithBoth.asave_called
+    assert not ClientWithBoth.save_called

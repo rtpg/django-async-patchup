@@ -101,7 +101,7 @@ def just_patch(onto):
 
 
 TRACKING_UNASYNCED = False
-if TRACKING_UNASYNCED:
+if TRACKING_UNASYNCED:  # pragma: no cover
 
     def generate_unasynced(sync_variant=None, async_unsafe=False, patch=True):
         def wrapper(f):

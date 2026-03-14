@@ -1,5 +1,6 @@
 from django.db.models.base import Model
 from django_async_patchup.registry import just_patch
+from asgiref.sync import sync_to_async, async_to_sync
 
 
 @just_patch(onto=Model)

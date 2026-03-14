@@ -252,7 +252,7 @@ class SQLCompilerOverrides:
             results = await self.aexecute_sql(
                 MULTI, chunked_fetch=chunked_fetch, chunk_size=chunk_size
             )
-        if ASYNC_TRUTH_MARKER:
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
             if results is not None:
                 # XXX wrong
                 # this is forcing evaluation of athing way to early
@@ -304,7 +304,7 @@ class SQLCompilerOverrides:
                 return iter([])
             else:
                 return
-        if ASYNC_TRUTH_MARKER:
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
             # Manually manage the cursor lifecycle like the sync path does,
             # so that acursor_iter can own cursor cleanup for the lazy MULTI case.
             if chunked_fetch:
@@ -369,7 +369,7 @@ class SQLCompilerOverrides:
                             pass
 
                 return _chunked_with_cm(result, cursor_cm)
-        else:
+        else:  # pragma: no cover
             if chunked_fetch:
                 cursor = self.connection.chunked_cursor()
             else:
@@ -675,9 +675,9 @@ class SQLUpdateCompilerOverrides:
         non-empty query that is executed. Row counts for any subsequent,
         related queries are not available.
         """
-        if ASYNC_TRUTH_MARKER:
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
             row_count = await SQLCompiler.aexecute_sql(self, result_type)
-        else:
+        else:  # pragma: no cover
             row_count = super().execute_sql(result_type)
         is_empty = row_count is None
         row_count = row_count or 0
@@ -727,13 +727,13 @@ async def acursor_iter(cursor, sentinel, col_count, itersize):
     done.
     """
     try:
-        if ASYNC_TRUTH_MARKER:
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
             while True:
                 rows = await cursor.fetchmany(itersize)
                 if rows == sentinel:
                     break
                 yield rows if col_count is None else [r[:col_count] for r in rows]
-        else:
+        else:  # pragma: no cover
             for rows in iter((lambda: cursor.fetchmany(itersize)), sentinel):
                 yield rows if col_count is None else [r[:col_count] for r in rows]
     finally:

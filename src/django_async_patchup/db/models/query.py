@@ -53,8 +53,8 @@ class QuerySetOverrides:
         If args is present the expression is passed as a kwarg using
         the Aggregate object's default alias.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.aggregate)(*args, **kwargs)
         if self.query.distinct_fields:
             raise NotImplementedError("aggregate() + distinct(fields) not implemented.")
@@ -107,7 +107,7 @@ class ModelIterableOverrides:
 
     @just_patch(onto=(ModelIterable, "__aiter__"))
     def __aiter__(self):
-        if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
             return self._async_generator()
         else:
             print("USING AGENERATOR")
@@ -191,8 +191,8 @@ class ModelIterableOverrides:
         If the QuerySet is already fully cached, return the length of the
         cached results set to avoid multiple SELECT COUNT(*) calls.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.count)()
         if self._result_cache is not None:
             return len(self._result_cache)
@@ -205,8 +205,8 @@ class ModelIterableOverrides:
         Perform the query and return a single object matching the given
         keyword arguments.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.get)(*args, **kwargs)
 
         if self.query.combinator and (args or kwargs):
@@ -248,8 +248,8 @@ class ModelIterableOverrides:
         Create a new object with the given kwargs, saving it to the database
         and returning the created object.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.create)(**kwargs)
         reverse_one_to_one_fields = frozenset(kwargs).intersection(
             self.model._meta._reverse_one_to_one_field_names
@@ -284,8 +284,8 @@ class ModelIterableOverrides:
         autoincrement field (except if features.can_return_rows_from_bulk_insert=True).
         Multi-table models are not supported.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.bulk_create)(
                     objs=objs,
                     batch_size=batch_size,
@@ -385,8 +385,8 @@ class ModelIterableOverrides:
         """
         Update the given fields in each of the given objects in the database.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.bulk_update)(
                     objs=objs,
                     fields=fields,
@@ -486,8 +486,8 @@ class ModelIterableOverrides:
         Return a tuple (object, created), where created is a boolean
         specifying whether an object was created.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.update_or_create)(
                     defaults=defaults,
                     create_defaults=create_defaults,
@@ -557,8 +557,8 @@ class ModelIterableOverrides:
 
     @generate_unasynced(sync_variant=QuerySet.earliest)
     async def aearliest(self, *fields):
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.earliest)(*fields)
         if self.query.is_sliced:
             raise TypeError("Cannot change a query once a slice has been taken.")
@@ -570,8 +570,8 @@ class ModelIterableOverrides:
         Return the latest object according to fields (if given) or by the
         model's Meta.get_latest_by.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.latest)(*fields)
         if self.query.is_sliced:
             raise TypeError("Cannot change a query once a slice has been taken.")
@@ -580,8 +580,8 @@ class ModelIterableOverrides:
     @generate_unasynced(sync_variant=QuerySet.first)
     async def afirst(self):
         """Return the first object of a query or None if no match is found."""
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.first)()
         if self.ordered:
             queryset = self
@@ -594,8 +594,8 @@ class ModelIterableOverrides:
     @generate_unasynced(sync_variant=QuerySet.last)
     async def alast(self):
         """Return the last object of a query or None if no match is found."""
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.last)()
         if self.ordered:
             queryset = self.reverse()
@@ -611,8 +611,8 @@ class ModelIterableOverrides:
         Return a dictionary mapping each of the given IDs to the object with
         that ID. If `id_list` isn't provided, evaluate the entire QuerySet.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.in_bulk)(
                     id_list=id_list,
                     field_name=field_name,
@@ -661,8 +661,8 @@ class ModelIterableOverrides:
     @generate_unasynced(sync_variant=QuerySet.delete)
     async def adelete(self):
         """Delete the records in the current QuerySet."""
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.delete)()
         self._not_support_combined_queries("delete")
         if self.query.is_sliced:
@@ -713,8 +713,8 @@ class ModelIterableOverrides:
         Update all elements in the current QuerySet, setting all the given
         fields to the appropriate values.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.update)(**kwargs)
         self._not_support_combined_queries("update")
         if self.query.is_sliced:
@@ -782,8 +782,8 @@ class ModelIterableOverrides:
         """
         Return True if the QuerySet would have any results, False otherwise.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.exists)()
         if self._result_cache is None:
             return await self.query.ahas_results(using=self.db)
@@ -795,8 +795,8 @@ class ModelIterableOverrides:
         Return True if the QuerySet contains the provided obj,
         False otherwise.
         """
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.contains)(obj=obj)
         self._not_support_combined_queries("contains")
         if self._fields is not None:

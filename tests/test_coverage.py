@@ -952,3 +952,305 @@ async def test_abulk_create_with_explicit_pk():
         assert len(objs) == 1
     finally:
         await Client.objects.filter(pk=explicit_pk).adelete()
+
+
+# ===========================================================================
+# _afetch_all when result_cache is already set — query.py branch 18->23
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_afetch_all_skips_population_when_cache_already_set():
+    """Second call to _afetch_all skips population since _result_cache is not None."""
+    await Client.objects.acreate(name="FetchCacheSkip_A")
+    qs = Client.objects.filter(name__startswith="FetchCacheSkip_")
+    # First call populates the cache
+    await qs._afetch_all()
+    assert qs._result_cache is not None
+    original_cache = qs._result_cache[:]
+    # Second call: _result_cache is not None → branch 18->23 (skip the population)
+    await qs._afetch_all()
+    assert qs._result_cache == original_cache
+
+
+# ===========================================================================
+# QuerySetOverrides._fetch_then_len static method — query.py lines 37-38
+# ===========================================================================
+
+@pytest.mark.django_db
+def test_queryset_overrides_fetch_then_len_static():
+    """_fetch_then_len(qs) fetches synchronously and returns len of cache."""
+    from django_async_patchup.db.models.query import QuerySetOverrides
+    Client.objects.create(name="FetchThenLen_X")
+    qs = Client.objects.filter(name__startswith="FetchThenLen_")
+    result = QuerySetOverrides._fetch_then_len(qs)
+    assert isinstance(result, int)
+    assert result >= 1
+
+
+# ===========================================================================
+# _aearliest with Meta.get_latest_by string — query.py line 546
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aearliest_no_fields_uses_meta_get_latest_by_string():
+    """_aearliest() with no fields and Meta.get_latest_by as a string covers line 546."""
+    from biz.models import Client
+
+    class ClientByName(Client):
+        class Meta:
+            proxy = True
+            app_label = "biz"
+            get_latest_by = "name"
+
+    await sync_to_async(Client.objects.create)(name="MetaEarliest_Z")
+    await sync_to_async(Client.objects.create)(name="MetaEarliest_A")
+    obj = await ClientByName.objects.filter(name__startswith="MetaEarliest_").aearliest()
+    assert obj.name == "MetaEarliest_A"
+
+
+# ===========================================================================
+# adelete() actual deletion — covers deletion.py core paths
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_actually_deletes_objects():
+    """Calling adelete() on a queryset deletes the matched objects."""
+    await Client.objects.acreate(name="ActualDelete_A")
+    await Client.objects.acreate(name="ActualDelete_B")
+    count, details = await Client.objects.filter(name__startswith="ActualDelete_").adelete()
+    assert count >= 2
+    assert not await Client.objects.filter(name__startswith="ActualDelete_").aexists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_with_cascade_deletes_related():
+    """adelete() on a Client with Invoices triggers cascade delete."""
+    client = await Client.objects.acreate(name="CascadeDelete_Client")
+    await Invoice.objects.acreate(client=client, reference="CDE-001", total=Decimal("1.00"))
+    await Invoice.objects.acreate(client=client, reference="CDE-002", total=Decimal("2.00"))
+    count, details = await Client.objects.filter(pk=client.pk).adelete()
+    # Client + 2 Invoices deleted
+    assert count >= 3
+    assert not await Invoice.objects.filter(client=client).aexists()
+
+
+# ===========================================================================
+# aupdate() with order_by — query.py lines 728-743 (order_by inlining loop)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_with_ascending_ordering_covers_order_loop():
+    """aupdate on a queryset with order_by covers the order_by annotation-inline loop."""
+    await Client.objects.acreate(name="OrdUpd_A")
+    await Client.objects.acreate(name="OrdUpd_B")
+    count = await (
+        Client.objects.filter(name__startswith="OrdUpd_")
+        .order_by("name")
+        .aupdate(metadata={"step": 1})
+    )
+    assert count >= 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_with_descending_ordering_covers_desc_branch():
+    """aupdate with '-field' ordering covers the descending=True branch (line 732-733)."""
+    await Client.objects.acreate(name="OrdUpdDesc_A")
+    await Client.objects.acreate(name="OrdUpdDesc_B")
+    count = await (
+        Client.objects.filter(name__startswith="OrdUpdDesc_")
+        .order_by("-name")
+        .aupdate(metadata={"step": 2})
+    )
+    assert count >= 2
+
+
+# ===========================================================================
+# abulk_update on MTI model — query.py line 408 (parent pk_fields loop)
+# ===========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_update_mti_model_covers_parent_pk_fields_loop():
+    """abulk_update on Employee (MTI) covers the all_parents loop at line 408."""
+    emp = await Employee.objects.acreate(first_name="BulkUpdMTI_Emp", department="Eng")
+    emp.department = "Updated_Dept"
+    count = await Employee.objects.abulk_update([emp], fields=["department"])
+    assert count == 1
+
+
+# ===========================================================================
+# transaction.py MarkForRollbackOnError — lines 20-23
+# ===========================================================================
+
+def test_mark_for_rollback_sync_exit_exception_outside_atomic():
+    """__exit__ with exception outside any transaction covers the False branch of in_atomic_block."""
+    from django_async_patchup.db.models.transaction import MarkForRollbackOnError
+    m = MarkForRollbackOnError(using="default")
+    exc = ValueError("test error outside atomic")
+    # Without @pytest.mark.django_db, connection.in_atomic_block is False → 32->exit branch covered
+    result = m.__exit__(type(exc), exc, None)
+    assert result is None  # exception is not suppressed
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_mark_for_rollback_async_exit_with_exception():
+    """async __aexit__ with exception covers transaction.py lines 24-25."""
+    from django_async_patchup.db.models.transaction import MarkForRollbackOnError
+    m = MarkForRollbackOnError(using="default")
+    exc = ValueError("async error")
+    # Covers line 24 (aget_connection) and line 25 (in_atomic_block check)
+    await m.__aexit__(type(exc), exc, None)
+
+
+@pytest.mark.django_db
+def test_mark_for_rollback_sync_exit_exception_in_atomic():
+    """__exit__ with an exception IN an atomic block covers lines 22-23."""
+    from django_async_patchup.db.models.transaction import MarkForRollbackOnError
+    from django.db import connection, transaction
+    m = MarkForRollbackOnError(using="default")
+    exc = ValueError("test error in atomic")
+    with transaction.atomic():
+        m.__exit__(type(exc), exc, None)
+        assert connection.needs_rollback is True
+        # Reset to allow clean teardown
+        connection.needs_rollback = False
+
+
+# ===========================================================================
+# db/__init__.py line 84 — new_connection.__enter__ raises without force_rollback
+# ===========================================================================
+
+def test_new_connection_sync_enter_raises_without_force_rollback():
+    """new_connection().__enter__() raises NotSupportedError unless force_rollback=True."""
+    from django_async_patchup.db import new_connection, allow_async_db_commits
+    from django.db.utils import NotSupportedError
+    with allow_async_db_commits():
+        conn = new_connection("default", force_rollback=False)
+        with pytest.raises(NotSupportedError, match="sync context"):
+            conn.__enter__()
+
+
+# ===========================================================================
+# sql/__init__.py lines 86-157 — aget_aggregation subquery path (sliced qs)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_on_sliced_queryset_uses_subquery():
+    """aaggregate() on a sliced queryset uses the AggregateQuery subquery path."""
+    await Client.objects.acreate(name="SubqAgg_A")
+    await Client.objects.acreate(name="SubqAgg_B")
+    await Client.objects.acreate(name="SubqAgg_C")
+    result = await Client.objects.filter(name__startswith="SubqAgg_")[:2].aaggregate(
+        count=Count("id")
+    )
+    assert result["count"] == 2
+
+
+# ===========================================================================
+# sql/__init__.py lines 170-174 — aget_aggregation with non-aggregate annotation
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_with_non_aggregate_annotation_hits_inline_path():
+    """aaggregate() with a non-aggregate annotation inlines it (lines 170-174)."""
+    from django.db.models.functions import Length
+
+    await Client.objects.acreate(name="InlineAgg")
+    result = await Client.objects.filter(name="InlineAgg").annotate(
+        name_len=Length("name")
+    ).aaggregate(count=Count("id"))
+    assert result["count"] == 1
+
+
+# ===========================================================================
+# sql/__init__.py 98->135 — distinct inner_query path in aget_aggregation
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_on_distinct_queryset_uses_distinct_subquery_path():
+    """Aggregating on a .distinct() queryset; inner_query.distinct=True → branch 98->135."""
+    await Client.objects.acreate(name="DistAgg_X")
+    await Client.objects.acreate(name="DistAgg_Y")
+    result = await Client.objects.filter(
+        name__startswith="DistAgg_"
+    ).distinct().aaggregate(count=Count("id"))
+    assert result["count"] == 2
+
+
+# ===========================================================================
+# sql/__init__.py line 157 — inner_query.select forced when empty
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acount_on_sliced_queryset_forces_inner_select():
+    """qs[:3].acount() triggers the inner_query.select assignment (line 157)."""
+    for i in range(4):
+        await Client.objects.acreate(name=f"SliceCount_{i}")
+    result = await Client.objects.filter(name__startswith="SliceCount_")[:3].acount()
+    assert result == 3
+
+
+# ===========================================================================
+# compiler.py lines 303-306 — EmptyResultSet in aexecute_sql (MULTI + non-MULTI)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiterator_on_impossible_filter_hits_empty_result_set():
+    """filter(pk__in=[]) raises EmptyResultSet in aexecute_sql; MULTI returns iter([])."""
+    results = [obj async for obj in Client.objects.filter(pk__in=[]).aiterator()]
+    assert results == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aexists_on_impossible_filter_hits_empty_result_set_single():
+    """filter(pk__in=[]) raises EmptyResultSet; SINGLE returns None → False."""
+    exists = await Client.objects.filter(pk__in=[]).aexists()
+    assert exists is False
+
+
+# ===========================================================================
+# deletion.py lines 231-236 — Collector.adelete single-instance fast path
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_adelete_single_instance_fast_path_via_signal():
+    """A single-instance delete where queryset can't fast-delete but instance can."""
+    from django.db.models.signals import pre_delete
+
+    calls = []
+
+    def _handler(sender, instance, **kwargs):
+        calls.append(instance)
+
+    # Connecting pre_delete prevents queryset-level fast delete,
+    # forcing the instance through self.data so the single-instance
+    # path in Collector.adelete (lines 228-236) is reached.
+    pre_delete.connect(_handler, sender=Person)
+    try:
+        person = await Person.objects.acreate(first_name="FastDeletePerson")
+        count, _ = await Person.objects.filter(pk=person.pk).adelete()
+        assert count == 1
+        assert len(calls) == 1
+    finally:
+        pre_delete.disconnect(_handler, sender=Person)
+

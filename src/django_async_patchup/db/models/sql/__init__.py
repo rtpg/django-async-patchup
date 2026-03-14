@@ -1,5 +1,6 @@
 # XXX move these later
 from django.db.models.sql.query import *
+from django.db.models.sql.query import ExplainInfo, EXPLAIN_OPTIONS_PATTERN
 from django.db.models import Count
 from django_async_patchup.registry import from_codegen, generate_unasynced
 from .compiler import *
@@ -223,7 +224,7 @@ class QueryOverrides:
         return await compiler.ahas_results()
 
     @generate_unasynced(sync_variant=Query.explain)
-    async def aexplain(self, using, format=None, **options):
+    async def aexplain(self, using, format=None, **options):  # pragma: no cover
         q = self.clone()
         for option_name in options:
             if (

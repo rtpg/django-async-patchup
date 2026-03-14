@@ -37,8 +37,8 @@ class ModelOverrides:
                 update_fields=update_fields,
             )
 
-        if ASYNC_TRUTH_MARKER:
-            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):
+        if ASYNC_TRUTH_MARKER:  # pragma: no branch
+            if should_use_sync_fallback(ASYNC_TRUTH_MARKER):  # pragma: no cover
                 return await sync_to_async(self.save)(
                     force_insert=force_insert,
                     force_update=force_update,

@@ -317,6 +317,51 @@ async def test_acontains_wrong_model_type():
     assert result is False
 
 
+# ---------------------------------------------------------------------------
+# registry.py get_owning_class returns None when module is None
+# ---------------------------------------------------------------------------
+
+
+def test_get_owning_class_returns_none_when_module_is_none():
+    """get_owning_class() returns None when inspect.getmodule() returns None (registry.py line 18)."""
+    import django_async_patchup.registry as reg_module
+    from unittest.mock import patch
+
+    def my_func(self):
+        pass
+
+    my_func.__qualname__ = "SomeClass.my_func"
+    with patch.object(reg_module.inspect, "getmodule", return_value=None):
+        result = reg_module.get_owning_class(my_func)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# db/__init__.py modify_cxn_depth except branch in new thread
+# ---------------------------------------------------------------------------
+
+
+def test_modify_cxn_depth_except_branch_in_new_thread():
+    """modify_cxn_depth() in a new thread where Local.value is not set hits except branch (db/__init__.py lines 17-18)."""
+    import threading
+    from django_async_patchup.db import modify_cxn_depth, new_connection_block_depth
+
+    results = []
+
+    def run_in_new_thread():
+        try:
+            del new_connection_block_depth.value
+        except AttributeError:
+            pass
+        modify_cxn_depth(lambda v: v + 1)
+        results.append(new_connection_block_depth.value)
+
+    t = threading.Thread(target=run_in_new_thread)
+    t.start()
+    t.join()
+    assert results == [1]
+
+
 @pytest.mark.asyncio
 @pytest.mark.django_db
 async def test_acontains_non_model_raises_typeerror():

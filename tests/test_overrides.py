@@ -417,3 +417,74 @@ async def test_abulk_update_empty_objs_returns_zero():
     """abulk_update() on an empty list returns 0 (query.py line 412)."""
     rows = await Client.objects.abulk_update([], ["name"])
     assert rows == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_collector_aadd_duplicate_skips_existing(transactional_db):
+    """Second aadd() call with same object takes False branch of 'if obj not in instances' (deletion.py 49->48)."""
+    from django.db.models.deletion import Collector
+
+    client = await Client.objects.acreate(name="DupCollector")
+    collector = Collector(using="default")
+
+    result1 = await collector.aadd([client])
+    assert result1 == [client]
+
+    result2 = await collector.aadd([client])
+    assert result2 == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_acreate_with_reverse_one_to_one_field_raises_value_error():
+    """acreate() with a reverse OneToOne field name raises ValueError (query.py line 258)."""
+    from biz.models import Person
+
+    with pytest.raises(ValueError, match="do not exist in this model"):
+        await Person.objects.acreate(first_name="ReverseTest", employee="bad")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_or_create_non_concrete_default_takes_full_save_path():
+    """aupdate_or_create() with non-concrete field in defaults falls through to asave() without update_fields (query.py line 530)."""
+    await Client.objects.acreate(name="UOC_NC", metadata={})
+    obj, created = await Client.objects.aupdate_or_create(
+        name="UOC_NC",
+        defaults={"extra_attr": "some_value"},
+    )
+    assert not created
+    assert obj.name == "UOC_NC"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_create_with_unique_and_update_fields():
+    """abulk_create() with unique_fields/update_fields exercises field resolution at lines 323 and 328.
+    The actual SQL fails (no DB constraint on name), but the field resolution lines still execute.
+    """
+    from django.db import ProgrammingError
+
+    with pytest.raises(ProgrammingError):
+        await Client.objects.abulk_create(
+            [Client(name="BulkUF_A", metadata={"v": 1})],
+            update_conflicts=True,
+            unique_fields=["name"],
+            update_fields=["metadata"],
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_on_deferred_queryset_triggers_loaded_fields_path():
+    """asave() on a deferred model instance triggers update_fields from loaded fields (models/__init__.py lines 90-93)."""
+    client = await Client.objects.acreate(name="DeferTest", metadata={"x": 1})
+    # Fetch with metadata deferred — only name is loaded
+    deferred_client = await Client.objects.defer("metadata").aget(pk=client.pk)
+    deferred_client.name = "DeferTestUpdated"
+    await deferred_client.asave()
+    refreshed = await Client.objects.aget(pk=client.pk)
+    assert refreshed.name == "DeferTestUpdated"
+    # metadata should not have been overwritten (deferred field preserved)
+    assert refreshed.metadata == {"x": 1}

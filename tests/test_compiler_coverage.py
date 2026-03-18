@@ -483,3 +483,16 @@ async def test_aupdate_truly_unfiltered_covers_full_result_set():
     # No .filter() → WHERE clause is empty → FullResultSet raised internally
     rows = await Client.objects.all().aupdate(metadata={"fs": True})
     assert rows >= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_annotate_with_distinct_fields_raises_not_implemented():
+    """annotate() + distinct(fields) raises NotImplementedError (compiler.py line 162)."""
+    from django.db.models import Count
+
+    with pytest.raises(NotImplementedError, match="annotate.*distinct"):
+        _ = [
+            x
+            async for x in Client.objects.annotate(cnt=Count("invoices")).distinct("name")
+        ]

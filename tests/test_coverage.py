@@ -1390,3 +1390,51 @@ async def test_mti_asave_child_only_update_fields_covers_empty_parent_values():
     # first_name untouched
     assert refreshed.first_name == "MTI333"
 
+
+# ---------------------------------------------------------------------------
+# codegen/async_helpers.py: unasynced_function_name edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_unasynced_function_name_all_returns_none():
+    """unasynced_function_name('all') returns None (async_helpers.py line 72)."""
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethod
+
+    transformer = UnasyncifyMethod()
+    assert transformer.unasynced_function_name("all") is None
+
+
+def test_unasynced_function_name_regular_async():
+    """unasynced_function_name strips leading 'a' from async names."""
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethod
+
+    transformer = UnasyncifyMethod()
+    assert transformer.unasynced_function_name("aget") == "get"
+    assert transformer.unasynced_function_name("_aget") == "_get"
+    assert transformer.unasynced_function_name("something") is None
+
+
+def test_unasynced_function_name_elif_branch():
+    """UnasyncifyMethod strips elif continuations (async_helpers.py line 120)."""
+    import libcst as cst
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethod
+
+    # Code with if ASYNC_TRUTH_MARKER: ... elif ...: ... (no plain else)
+    source = """\
+async def afoo(x):
+    if ASYNC_TRUTH_MARKER:
+        return x
+    elif x > 0:
+        return x + 1
+    else:
+        return 0
+"""
+    module = cst.parse_module(source)
+    func = module.body[0]
+    result = func.visit(UnasyncifyMethod())
+    code = module.with_changes(body=[result]).code
+    # The elif continuation is returned as-is (line 120 returns updated_node.orelse).
+    # It gets rendered as a standalone `if` by libcst (no leading `if ASYNC_TRUTH_MARKER:`).
+    assert "x > 0" in code
+    assert "ASYNC_TRUTH_MARKER" not in code
+

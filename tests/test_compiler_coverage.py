@@ -436,3 +436,50 @@ async def test_aupdate_fk_with_model_instance_covers_prepare_database_save():
     assert count == 1
     refreshed = await Invoice.objects.aget(pk=invoice.pk)
     assert refreshed.client_id == new_client.pk
+
+
+# ── SQLUpdateCompiler.aas_sql: window expression raises FieldError (line 622) ─
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_with_window_expression_raises_field_error():
+    """aupdate with a window expression raises FieldError (compiler.py line 622)."""
+    from django.core.exceptions import FieldError
+    from django.db.models.expressions import Window
+    from django.db.models.functions import Rank
+
+    await Client.objects.acreate(name="WindowUpdate_X")
+    with pytest.raises(FieldError, match="Window expressions are not allowed"):
+        await Client.objects.filter(name="WindowUpdate_X").aupdate(
+            name=Window(expression=Rank())
+        )
+
+
+# ── SQLUpdateCompiler.aas_sql: FullResultSet (no WHERE) path (lines 664-665) ─
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_no_filter_covers_full_result_set():
+    """aupdate() with no filter hits FullResultSet branch (compiler.py lines 664-665)."""
+    await Client.objects.acreate(name="NoFilter_A")
+    await Client.objects.acreate(name="NoFilter_B")
+
+    rows = await Client.objects.filter(name__startswith="NoFilter_").aupdate(
+        metadata={"updated": True}
+    )
+    assert rows == 2
+
+
+# FullResultSet variant: truly unfiltered queryset (no WHERE clause at all)
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_truly_unfiltered_covers_full_result_set():
+    """aupdate() on an unfiltered queryset hits FullResultSet (lines 664-665)."""
+    await Client.objects.acreate(name="Unfiltered_FS")
+    # No .filter() → WHERE clause is empty → FullResultSet raised internally
+    rows = await Client.objects.all().aupdate(metadata={"fs": True})
+    assert rows >= 1

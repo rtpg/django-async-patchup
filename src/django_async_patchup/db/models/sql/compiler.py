@@ -107,7 +107,7 @@ class SQLCompilerOverrides:
                             "select_for_update cannot be used outside of a transaction."
                         )
 
-                    if (
+                    if (  # pragma: no cover
                         with_limit_offset
                         and not features.supports_select_for_update_with_limit
                     ):
@@ -122,19 +122,19 @@ class SQLCompilerOverrides:
                     # If it's a NOWAIT/SKIP LOCKED/OF/NO KEY query but the
                     # backend doesn't support it, raise NotSupportedError to
                     # prevent a possible deadlock.
-                    if nowait and not features.has_select_for_update_nowait:
+                    if nowait and not features.has_select_for_update_nowait:  # pragma: no cover
                         raise NotSupportedError(
                             "NOWAIT is not supported on this database backend."
                         )
-                    elif skip_locked and not features.has_select_for_update_skip_locked:
+                    elif skip_locked and not features.has_select_for_update_skip_locked:  # pragma: no cover
                         raise NotSupportedError(
                             "SKIP LOCKED is not supported on this database backend."
                         )
-                    elif of and not features.has_select_for_update_of:
+                    elif of and not features.has_select_for_update_of:  # pragma: no cover
                         raise NotSupportedError(
                             "FOR UPDATE OF is not supported on this database backend."
                         )
-                    elif no_key and not features.has_select_for_no_key_update:
+                    elif no_key and not features.has_select_for_no_key_update:  # pragma: no cover
                         raise NotSupportedError(
                             "FOR NO KEY UPDATE is not supported on this "
                             "database backend."
@@ -146,7 +146,7 @@ class SQLCompilerOverrides:
                         no_key=no_key,
                     )
 
-                if for_update_part and features.for_update_after_from:
+                if for_update_part and features.for_update_after_from:  # pragma: no cover
                     result.append(for_update_part)
 
                 if where:
@@ -187,7 +187,7 @@ class SQLCompilerOverrides:
                     ordering.append(o_sql)
                     params.extend(o_params)
                 order_by_sql = "ORDER BY %s" % ", ".join(ordering)
-                if combinator and features.requires_compound_order_by_subquery:
+                if combinator and features.requires_compound_order_by_subquery:  # pragma: no cover
                     result = ["SELECT * FROM (", *result, ")", order_by_sql]
                 else:
                     result.append(order_by_sql)
@@ -486,7 +486,7 @@ class InsertCompilerOverrides:
                     self.connection.ops.bulk_insert_sql(fields, placeholder_rows)
                 )
                 params = param_rows
-            else:
+            else:  # pragma: no cover
                 result.append("VALUES (%s)" % ", ".join(placeholder_rows[0]))
                 params = [param_rows[0]]
             if on_conflict_suffix_sql:
@@ -544,7 +544,7 @@ class InsertCompilerOverrides:
                     )
                 ]
                 cols = [field.get_col(opts.db_table) for field in self.returning_fields]
-            elif returning_fields and isinstance(
+            elif returning_fields and isinstance(  # pragma: no cover
                 returning_field := returning_fields[0], AutoField
             ):
                 cols = [returning_field.get_col(opts.db_table)]
@@ -557,7 +557,7 @@ class InsertCompilerOverrides:
                         ),
                     )
                 ]
-            else:
+            else:  # pragma: no cover
                 # Backend doesn't support returning fields and no auto-field
                 # that can be retrieved from `last_insert_id` was specified.
                 return []

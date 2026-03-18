@@ -477,6 +477,52 @@ async def test_abulk_create_with_unique_and_update_fields():
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
+async def test_acollect_keep_parents_skips_parent_relations():
+    """acollect(keep_parents=True) skips parent relations (deletion.py lines 105->120, 128)."""
+    from django.db.models.deletion import Collector
+    from biz.models import Employee
+
+    emp = await Employee.objects.acreate(first_name="KP_Test", department="QA")
+    collector = Collector(using="default")
+    await collector.acollect([emp], keep_parents=True)
+    # With keep_parents=True, the Person parent should NOT be in the delete set
+    from biz.models import Person
+    assert Person not in collector.data
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_with_positional_args_deprecated_path():
+    """asave() with positional args uses the deprecated _parse_save_params path (models/__init__.py line 31)."""
+    import warnings
+    client = await Client.objects.acreate(name="PosArgs", metadata={})
+    # Positional args: force_insert=False, force_update=False (RemovedInDjango60Warning)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        client.name = "PosArgsUpdated"
+        await client.asave(False, False)
+    refreshed = await Client.objects.aget(pk=client.pk)
+    assert refreshed.name == "PosArgsUpdated"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_descending_annotation_covers_desc_branch():
+    """aupdate() with descending non-aggregate annotation in order_by calls .desc() (query.py line 740)."""
+    from django.db.models.functions import Length
+
+    await Client.objects.acreate(name="DescAnno", metadata={})
+    count = await (
+        Client.objects.annotate(name_len=Length("name"))
+        .order_by("-name_len")
+        .filter(name="DescAnno")
+        .aupdate(metadata={"desc": True})
+    )
+    assert count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
 async def test_asave_on_deferred_queryset_triggers_loaded_fields_path():
     """asave() on a deferred model instance triggers update_fields from loaded fields (models/__init__.py lines 90-93)."""
     client = await Client.objects.acreate(name="DeferTest", metadata={"x": 1})

@@ -732,3 +732,21 @@ async def test_aaggregate_sliced_with_two_aggregates_on_same_column():
         total_sum=Sum("total"), total_avg=Avg("total")
     )
     assert result["total_sum"] == Decimal("30.00")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_or_create_invoice_fk_attname_branch():
+    """aupdate_or_create on Invoice: FK client field adds both field.name and attname to update_fields (query.py line 527)."""
+    client = await Client.objects.acreate(name="UOC_FK_Zz5")
+    await Invoice.objects.acreate(client=client, reference="UOC-FK-Zz5", total=Decimal("10.00"))
+
+    # Update path: defaults={"total"} → update_fields={"total"} → loop hits client FK
+    # client.name("client") != client.attname("client_id") → line 527 executes
+    inv, created = await Invoice.objects.aupdate_or_create(
+        reference="UOC-FK-Zz5",
+        client=client,
+        defaults={"total": Decimal("20.00")},
+    )
+    assert not created
+    assert inv.total == Decimal("20.00")

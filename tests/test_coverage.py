@@ -437,6 +437,33 @@ async def test_adelete_single_invoice_fast_path():
     assert not await Invoice.objects.filter(pk=pk).aexists()
 
 
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_collector_adelete_single_instance_optimization():
+    """Collector.adelete() single-instance optimization path (deletion.py lines 231-236).
+
+    When data has exactly one model with one instance and can_fast_delete is True,
+    adelete() uses the fast path instead of wrapping in async_atomic.
+    The queryset-based qs.adelete() never reaches this because can_fast_delete(qs)
+    returns True at collection time → goes to fast_deletes instead.
+    By calling aadd() directly we put the instance in data and trigger the optimization.
+    """
+    from django.db.models.deletion import Collector
+
+    client = await Client.objects.acreate(name="FD_Single_Zz7")
+    invoice = await Invoice.objects.acreate(
+        client=client, reference="FD-Single-Zz7", total=Decimal("1.00")
+    )
+
+    collector = Collector(using="default")
+    # aadd adds invoice to data[Invoice] directly (bypassing can_fast_delete on queryset)
+    await collector.aadd([invoice])
+
+    count, breakdown = await collector.adelete()
+    assert count == 1
+    assert not await Invoice.objects.filter(pk=invoice.pk).aexists()
+
+
 # ---------------------------------------------------------------------------
 # aget_or_create with defaults dict
 # ---------------------------------------------------------------------------
@@ -1735,4 +1762,5 @@ def test_decorator_names_covers_name_decorators():
 
     assert cmd.decorator_names(node_plain) == []
     assert cmd.decorator_names(node_with_deco) == ["something", "other"]
+
 

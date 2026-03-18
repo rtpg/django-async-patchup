@@ -605,6 +605,20 @@ async def test_delete_with_cross_table_filter_uses_subquery():
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
+async def test_aiter_with_known_related_objects_from_filter():
+    """filter(fk=obj) stores obj in _known_related_objects; iterating hits lines 173-181."""
+    client = await Client.objects.acreate(name="KnownRel_Client_Xq9")
+    await Invoice.objects.acreate(
+        client=client, reference="KR-001", total=Decimal("5.00")
+    )
+    invoices = [inv async for inv in Invoice.objects.filter(client=client)]
+    assert len(invoices) == 1
+    # _known_related_objects set the client field; verify it's pre-cached
+    assert invoices[0].client_id == client.pk
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
 async def test_ain_bulk_returns_empty_dict_for_empty_list():
     """ain_bulk([]) with explicit empty id_list returns {} (query.py line 641-642)."""
     await Client.objects.acreate(name="InBulk_A")

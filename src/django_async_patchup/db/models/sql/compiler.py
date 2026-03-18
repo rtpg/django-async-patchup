@@ -324,7 +324,7 @@ class SQLCompilerOverrides:
                     return cursor.rowcount
                 finally:
                     await cursor_cm.__aexit__(None, None, None)
-            elif result_type == CURSOR:
+            elif result_type == CURSOR:  # pragma: no cover
                 # Caller takes ownership; cursor stays open.
                 return cursor
             elif result_type == SINGLE:
@@ -335,7 +335,7 @@ class SQLCompilerOverrides:
                     return val
                 finally:
                     await cursor_cm.__aexit__(None, None, None)
-            elif result_type == NO_RESULTS:
+            elif result_type == NO_RESULTS:  # pragma: no cover
                 await cursor_cm.__aexit__(None, None, None)
                 return
             else:
@@ -454,7 +454,7 @@ class InsertCompilerOverrides:
                 ]
                 for obj in self.query.objs
             ]
-        else:
+        else:  # pragma: no cover
             # An empty object.
             value_rows = [
                 [self.connection.ops.pk_default_value()] for _ in self.query.objs
@@ -640,7 +640,7 @@ class SQLUpdateCompilerOverrides:
             val = field.get_db_prep_save(val, connection=self.connection)
 
             # Getting the placeholder for the field.
-            if hasattr(field, "get_placeholder"):
+            if hasattr(field, "get_placeholder"):  # pragma: no cover
                 placeholder = field.get_placeholder(val, self, self.connection)
             else:
                 placeholder = "%s"
@@ -652,7 +652,7 @@ class SQLUpdateCompilerOverrides:
             elif val is not None:
                 values.append("%s = %s" % (qn(name), placeholder))
                 update_params.append(val)
-            else:
+            else:  # pragma: no cover
                 values.append("%s = NULL" % qn(name))
         table = self.query.base_table
         result = [

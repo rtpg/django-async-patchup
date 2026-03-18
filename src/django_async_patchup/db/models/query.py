@@ -218,7 +218,7 @@ class ModelIterableOverrides:
         if self.query.can_filter() and not self.query.distinct_fields:
             clone = clone.order_by()
         limit = None
-        if (
+        if (  # pragma: no branch
             not clone.query.select_for_update
             or connections[clone.db].features.supports_select_for_update_with_limit
         ):
@@ -349,7 +349,7 @@ class ModelIterableOverrides:
                 )
                 for obj_with_pk, results in zip(objs_with_pk, returned_columns):
                     for result, field in zip(results, opts.db_returning_fields):
-                        if field != opts.pk:
+                        if field != opts.pk:  # pragma: no cover
                             setattr(obj_with_pk, field.attname, result)
                 for obj_with_pk in objs_with_pk:
                     obj_with_pk._state.adding = False

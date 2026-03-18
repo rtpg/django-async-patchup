@@ -388,3 +388,32 @@ async def test_aupdate_non_aggregate_annotation_order_by_inlines():
         .aupdate(metadata={"inlined": True})
     )
     assert count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_update_with_f_expression_covers_resolve_expression_branch():
+    """
+    abulk_update() where one of the field values has resolve_expression (F expression).
+    Covers the 432->434 branch in query.py (hasattr(attr, 'resolve_expression') is True,
+    so the if-not branch is skipped).
+    """
+    from django.db.models import F
+
+    client = await Client.objects.acreate(name="FExpr_Client")
+    invoice = await Invoice.objects.acreate(
+        client=client, reference="FE-001", total=Decimal("10.00")
+    )
+
+    # Set total to an F expression so attr has resolve_expression
+    invoice.total = F("total")
+    rows = await Invoice.objects.abulk_update([invoice], ["total"])
+    assert rows == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_update_empty_objs_returns_zero():
+    """abulk_update() on an empty list returns 0 (query.py line 412)."""
+    rows = await Client.objects.abulk_update([], ["name"])
+    assert rows == 0

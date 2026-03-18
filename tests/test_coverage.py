@@ -1438,3 +1438,256 @@ async def afoo(x):
     assert "x > 0" in code
     assert "ASYNC_TRUTH_MARKER" not in code
 
+
+# ---------------------------------------------------------------------------
+# codegen/async_helpers.py: UnasyncifyMethodCommand full codemod
+# ---------------------------------------------------------------------------
+
+
+def test_unasyncify_method_command_runs_on_class():
+    """
+    Run UnasyncifyMethodCommand on source with @generate_unasynced.
+    Covers __init__ (149-150), visit_ClassDef (153-154), leave_ClassDef (157-158),
+    decorator_info (217-242), label_as_codegen (173-194), calculate_new_name (254-262),
+    leave_FunctionDef (270-294).
+    """
+    import libcst as cst
+    from libcst.codemod import CodemodContext
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethodCommand
+
+    source = """\
+class MyClass:
+    @generate_unasynced()
+    async def aget(self, x):
+        return await self.afetch(x)
+"""
+    context = CodemodContext()
+    module = cst.parse_module(source)
+    cmd = UnasyncifyMethodCommand(context)
+    new_module = module.visit(cmd)
+    code = new_module.code
+
+    # The sync version should be generated
+    assert "def get(self, x):" in code
+    # The async version should still be present
+    assert "async def aget" in code
+    # The @from_codegen decorator should be applied to the sync version
+    assert "from_codegen" in code
+
+
+def test_should_be_unasyncified_method():
+    """
+    Directly call should_be_unasyncified to cover lines 161-163.
+    The method returns True only for async functions named 'ainit_connection_state'.
+    """
+    import libcst as cst
+    from libcst.codemod import CodemodContext
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethodCommand
+
+    context = CodemodContext()
+    cmd = UnasyncifyMethodCommand(context)
+
+    # Parse a simple async function to get a FunctionDef node
+    source_match = "async def ainit_connection_state(self): pass"
+    source_no_match = "async def aget(self): pass"
+    source_sync = "def get(self): pass"
+
+    match_node = cst.parse_module(source_match).body[0]
+    no_match_node = cst.parse_module(source_no_match).body[0]
+    sync_node = cst.parse_module(source_sync).body[0]
+
+    assert cmd.should_be_unasyncified(match_node)
+    assert not cmd.should_be_unasyncified(no_match_node)
+    assert not cmd.should_be_unasyncified(sync_node)
+
+
+# ---------------------------------------------------------------------------
+# db/__init__.py: is_commit_allowed() except branch (lines 57-60)
+# ---------------------------------------------------------------------------
+
+
+def test_is_commit_allowed_except_branch():
+    """
+    is_commit_allowed() has a bare except that sets commit_allowed.value = True
+    when the attribute access fails. Trigger it from a fresh thread where the
+    Local() has no value set (lines 57-60).
+    """
+    import threading
+    from django_async_patchup.db import is_commit_allowed, commit_allowed
+
+    results = []
+
+    def run_in_new_thread():
+        # In a brand-new thread, commit_allowed.value has never been set,
+        # so accessing it raises AttributeError → the except branch fires.
+        try:
+            del commit_allowed.value
+        except AttributeError:
+            pass  # already unset
+        result = is_commit_allowed()
+        results.append(result)
+
+    t = threading.Thread(target=run_in_new_thread)
+    t.start()
+    t.join()
+
+    # The except branch sets value = True and returns True
+    assert results == [True]
+
+
+# ---------------------------------------------------------------------------
+# codegen/async_helpers.py: UnasyncifyMethodCommand — remaining branches
+# ---------------------------------------------------------------------------
+
+
+def test_unasyncify_command_async_unsafe_naming_from_codegen_and_plain():
+    """
+    Covers multiple UnasyncifyMethodCommand branches in one run:
+    - @generate_unasynced(async_unsafe=True) → label_as_codegen async_unsafe branch
+      (lines 187-192), args loop for async_unsafe arg (234-239)
+    - async def test_async_do_thing → calculate_new_name test_async_ branch (line 256)
+    - async def _aget_internal → calculate_new_name _a branch (line 259)
+    - @from_codegen (Name) decorated func → codegenned_func returns True (line 199),
+      RemovalSentinel (line 274), 228->242 branch
+    - plain undecorated method → 222->242 branch, return updated_node (line 296)
+    """
+    import libcst as cst
+    from libcst.codemod import CodemodContext
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethodCommand
+
+    source = """\
+class MyClass:
+    @generate_unasynced(async_unsafe=True)
+    async def aget_value(self):
+        return await self.afetch()
+
+    @generate_unasynced()
+    async def test_async_do_thing(self):
+        return await self.afetch()
+
+    @generate_unasynced()
+    async def _aget_internal(self):
+        return await self.afetch()
+
+    @from_codegen
+    def get_value(self):
+        return self.fetch()
+
+    def plain_method(self):
+        pass
+"""
+    context = CodemodContext()
+    module = cst.parse_module(source)
+    cmd = UnasyncifyMethodCommand(context)
+    new_module = module.visit(cmd)
+    code = new_module.code
+
+    # async_unsafe decorator added to the sync version
+    assert "async_unsafe" in code
+    # test_async_ naming → test_do_thing generated (test_async_do_thing → test_do_thing)
+    assert "def test_do_thing" in code
+    # _a naming → _get_internal generated (_aget_internal → _get_internal)
+    assert "def _get_internal" in code
+    # plain_method stays (line 296)
+    assert "def plain_method" in code
+
+
+def test_unasyncify_command_with_sync_variant():
+    """
+    Run UnasyncifyMethodCommand on source with @generate_unasynced(sync_variant=X.y).
+    Covers label_as_codegen sync_variant branch (line 175) and decorator_info
+    sync_variant parsing (lines 240-241).
+    """
+    import libcst as cst
+    from libcst.codemod import CodemodContext
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethodCommand
+
+    source = """\
+class MyClass:
+    @generate_unasynced(sync_variant=SomeClass.method)
+    async def aget(self):
+        return await self.afetch()
+"""
+    context = CodemodContext()
+    module = cst.parse_module(source)
+    cmd = UnasyncifyMethodCommand(context)
+    new_module = module.visit(cmd)
+    code = new_module.code
+
+    # Sync version should be generated
+    assert "def get(self):" in code
+    # from_codegen with original= arg should be present
+    assert "from_codegen(original" in code
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_update_fields_on_deleted_row_raises():
+    """
+    asave(update_fields=[...]) on an object whose row was deleted raises DatabaseError
+    (models/__init__.py line 285: 'Save with update_fields did not affect any rows.').
+    """
+    from django.db import DatabaseError
+
+    client = await Client.objects.acreate(name="WillVanish")
+    # Use queryset delete (not instance.adelete()) to avoid clearing client.pk
+    await Client.objects.filter(pk=client.pk).adelete()
+
+    client.name = "Changed After Delete"
+    with pytest.raises(DatabaseError, match="Save with update_fields did not affect any rows"):
+        await client.asave(update_fields=["name"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_mti_cached_parent_link_clears_cache():
+    """
+    Accessing the parent object on an MTI instance caches the field.
+    A subsequent asave() triggers the field.is_cached check and deletes the cache
+    (models/__init__.py lines 219-220).
+    """
+    emp = await Employee.objects.acreate(first_name="CacheTest", department="QA")
+
+    # Access the parent object to populate the OneToOneField cache
+    _ = await sync_to_async(lambda: emp.person_ptr)()
+
+    # Save the employee again — _asave_parents should see field.is_cached and clear it
+    emp.department = "Engineering"
+    await emp.asave(update_fields=["department"])
+
+    refreshed = await Employee.objects.aget(pk=emp.pk)
+    assert refreshed.department == "Engineering"
+
+
+def test_calculate_new_name_value_error_on_unknown_name():
+    """
+    calculate_new_name raises ValueError for names that don't start with 'a', '_a',
+    or 'test_async_' (async_helpers.py line 263).
+    """
+    from libcst.codemod import CodemodContext
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethodCommand
+
+    cmd = UnasyncifyMethodCommand(CodemodContext())
+    with pytest.raises(ValueError):
+        cmd.calculate_new_name("unknown_method_name")
+
+
+def test_decorator_names_covers_name_decorators():
+    """
+    decorator_names() returns a list of decorator names for Name decorators
+    (async_helpers.py line 247).
+    """
+    import libcst as cst
+    from libcst.codemod import CodemodContext
+    from django_async_patchup.codegen.async_helpers import UnasyncifyMethodCommand
+
+    source = "def foo(): pass"
+    source_with_deco = "@something\n@other\ndef foo(): pass"
+
+    cmd = UnasyncifyMethodCommand(CodemodContext())
+    node_plain = cst.parse_module(source).body[0]
+    node_with_deco = cst.parse_module(source_with_deco).body[0]
+
+    assert cmd.decorator_names(node_plain) == []
+    assert cmd.decorator_names(node_with_deco) == ["something", "other"]
+

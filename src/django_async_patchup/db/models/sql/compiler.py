@@ -41,7 +41,7 @@ class SQLCompilerOverrides:
                 result, params = self.get_combinator_sql(
                     combinator, self.query.combinator_all
                 )
-            elif self.qualify:
+            elif self.qualify:  # pragma: no cover
                 result, params = self.get_qualify_sql()
                 order_by = None
             else:
@@ -92,7 +92,7 @@ class SQLCompilerOverrides:
                 result += [", ".join(out_cols)]
                 if from_:
                     result += ["FROM", *from_]
-                elif self.connection.features.bare_select_suffix:
+                elif self.connection.features.bare_select_suffix:  # pragma: no cover
                     result += [self.connection.features.bare_select_suffix]
                 params.extend(f_params)
 

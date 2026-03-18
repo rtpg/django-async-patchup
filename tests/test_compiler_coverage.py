@@ -516,3 +516,15 @@ async def test_annotate_with_distinct_fields_raises_not_implemented():
             x
             async for x in Client.objects.annotate(cnt=Count("invoices")).distinct("name")
         ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_with_model_instance_on_non_fk_field_raises():
+    """Passing a model instance to aupdate() on a non-FK field raises TypeError (compiler.py line 635)."""
+    client = await Client.objects.acreate(name="UpdateErr_A")
+    other_client = await Client.objects.acreate(name="UpdateErr_B")
+    with pytest.raises(TypeError, match="Tried to update field"):
+        await Client.objects.filter(pk=client.pk).aupdate(name=other_client)
+
+

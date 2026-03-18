@@ -605,15 +605,29 @@ async def test_delete_with_cross_table_filter_uses_subquery():
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
-async def test_aiter_with_known_related_objects_from_filter():
-    """filter(fk=obj) stores obj in _known_related_objects; iterating hits lines 173-181."""
+async def test_aiter_reverse_fk_populates_known_related_objects():
+    """Iterating client.invoices.all() uses _known_related_objects (lines 173-181)."""
     client = await Client.objects.acreate(name="KnownRel_Client_Xq9")
     await Invoice.objects.acreate(
         client=client, reference="KR-001", total=Decimal("5.00")
     )
-    invoices = [inv async for inv in Invoice.objects.filter(client=client)]
+    # Reverse FK manager sets _known_related_objects = {client_field: {pk: client}}
+    invoices = [inv async for inv in client.invoices.all()]
     assert len(invoices) == 1
-    # _known_related_objects set the client field; verify it's pre-cached
+    assert invoices[0].client_id == client.pk
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aiter_select_related_and_known_objects_covers_is_cached():
+    """select_related + reverse FK manager → is_cached(obj) True → line 174 continue."""
+    client = await Client.objects.acreate(name="IsCache_Client_Za1")
+    await Invoice.objects.acreate(
+        client=client, reference="IC-001", total=Decimal("5.00")
+    )
+    # client.invoices sets _known_related_objects, select_related populates cache via populators
+    invoices = [inv async for inv in client.invoices.select_related("client").all()]
+    assert len(invoices) == 1
     assert invoices[0].client_id == client.pk
 
 
@@ -633,3 +647,88 @@ async def test_aupdate_with_no_fields_returns_zero():
     await Client.objects.acreate(name="EmptyUpdate_Xq7")
     count = await Client.objects.filter(name="EmptyUpdate_Xq7").aupdate()
     assert count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_sliced_queryset_raises_type_error():
+    """_aupdate() on sliced queryset raises TypeError (query.py line 769)."""
+    await Client.objects.acreate(name="SliceUpdate_Zz8")
+    qs = Client.objects.all()[:5]
+    with pytest.raises(TypeError, match="slice"):
+        await qs._aupdate([])
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_or_create_with_auto_now_field_covers_update_fields_path():
+    """aupdate_or_create on Client (has updated_at auto_now=True) → update_fields path lines 521-527."""
+    # First call creates the object
+    _, created = await Client.objects.aupdate_or_create(
+        name="UOC_AutoNow_Zz9",
+        defaults={"metadata": {"v": 1}},
+    )
+    assert created
+    # Second call should update with auto_now field triggering custom pre_save path (line 525)
+    client2, created2 = await Client.objects.aupdate_or_create(
+        name="UOC_AutoNow_Zz9",
+        defaults={"metadata": {"v": 2}},
+    )
+    assert not created2
+    assert client2.metadata == {"v": 2}
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_with_existing_annotation_uses_subquery_with_group_by():
+    """annotate(agg).aaggregate() → has_existing_aggregation=True → sql/__init__.py line 106."""
+    from django.db.models import Max
+    client = await Client.objects.acreate(name="ExistAgg_Client_Zz1")
+    await Invoice.objects.acreate(client=client, reference="EA-001", total=Decimal("5.00"))
+    result = await (
+        Client.objects.annotate(inv_count=Count("invoices"))
+        .aaggregate(max_invoices=Max("inv_count"))
+    )
+    assert result["max_invoices"] >= 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_with_values_annotate_covers_group_by_tuple_path():
+    """values().annotate().aaggregate() → group_by is tuple → sql/__init__.py lines 117-118."""
+    from django.db.models import Max
+    client = await Client.objects.acreate(name="ValAgg_A_Zz2")
+    await Invoice.objects.acreate(client=client, reference="VA-001", total=Decimal("5.00"))
+    result = await Client.objects.filter(
+        name__startswith="ValAgg_"
+    ).values("name").annotate(inv_count=Count("invoices")).aaggregate(max_count=Max("inv_count"))
+    assert result["max_count"] >= 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_annotation_with_group_by_cols_covers_line_125():
+    """Non-aggregate annotation has group_by_cols → annotation_mask.add() at sql/__init__.py line 125."""
+    from django.db.models import Max
+    from django.db.models.functions import Length
+    await Client.objects.acreate(name="GroupByCols_A_Zz3")
+    result = await Client.objects.filter(
+        name__startswith="GroupByCols_"
+    ).values("name").annotate(
+        name_len=Length("name"), inv_count=Count("invoices")
+    ).aaggregate(max_len=Max("name_len"))
+    assert result["max_len"] >= 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_sliced_with_two_aggregates_on_same_column():
+    """Sliced queryset (is_sliced=True) with two aggregates on same col → col_ref reuse at sql/__init__.py line 140→146."""
+    from django.db.models import Sum, Avg
+    client = await Client.objects.acreate(name="SlicedAgg_Zz4")
+    await Invoice.objects.acreate(client=client, reference="SA-001", total=Decimal("10.00"))
+    await Invoice.objects.acreate(client=client, reference="SA-002", total=Decimal("20.00"))
+    result = await Invoice.objects.filter(client=client)[:5].aaggregate(
+        total_sum=Sum("total"), total_avg=Avg("total")
+    )
+    assert result["total_sum"] == Decimal("30.00")

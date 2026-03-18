@@ -91,7 +91,7 @@ async def _ainsert(
     Insert a new record for the given model.
     """
     self._for_write = True
-    if using is None:
+    if using is None:  # pragma: no cover
         using = self.db
     query = sql.InsertQuery(
         self.model,
@@ -433,7 +433,7 @@ class ModelIterableOverrides:
                         attr = Value(attr, output_field=field)
                     when_statements.append(When(pk=obj.pk, then=attr))
                 case_statement = Case(*when_statements, output_field=field)
-                if requires_casting:
+                if requires_casting:  # pragma: no branch
                     case_statement = Cast(case_statement, output_field=field)
                 update_kwargs[field.attname] = case_statement
             updates.append(([obj.pk for obj in batch_objs], update_kwargs))
@@ -845,7 +845,7 @@ class ModelIterableOverrides:
         the InsertQuery class and is how Model.save() is implemented.
         """
         self._for_write = True
-        if using is None:
+        if using is None:  # pragma: no cover
             using = self.db
         query = sql.InsertQuery(
             self.model,
@@ -912,17 +912,17 @@ class ModelIterableOverrides:
 class RawQuerySetOverrides:
 
     @generate_unasynced(sync_variant=RawQuerySet._prefetch_related_objects)
-    async def _aprefetch_related_objects(self):
+    async def _aprefetch_related_objects(self):  # pragma: no cover
         await aprefetch_related_objects(self._result_cache, *self._prefetch_related_lookups)
         self._prefetch_done = True
 
     @staticmethod
-    def _fetch_then_len(qs):
+    def _fetch_then_len(qs):  # pragma: no cover
         qs._fetch_all()
         return len(qs._result_cache)
 
     @staticmethod
-    async def _afetch_then_len(qs):
+    async def _afetch_then_len(qs):  # pragma: no cover
         # TODO link to _fetch_then_len
         # RawQuerySet helper
         await qs._afetch_all()

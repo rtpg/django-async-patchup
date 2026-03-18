@@ -403,3 +403,36 @@ async def test_abulk_create_ignore_conflicts_covers_no_returning_path():
     )
     # ignore_conflicts=True means returning_fields is not set → PKs not populated
     assert await Client.objects.filter(name__startswith="IgnoreConflict_").acount() == 2
+
+
+# ── SQLUpdateCompiler.aas_sql: aggregate in SET raises FieldError (line 617) ─
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_with_aggregate_expression_raises_field_error():
+    """aupdate with an aggregate expression raises FieldError (compiler.py line 617)."""
+    from django.core.exceptions import FieldError
+    from django.db.models import Count
+
+    await Client.objects.acreate(name="AggUpdateTest_X")
+    with pytest.raises(FieldError, match="Aggregate functions are not allowed"):
+        await Client.objects.filter(name="AggUpdateTest_X").aupdate(name=Count("id"))
+
+
+# ── SQLUpdateCompiler.aas_sql: FK update with model instance (lines 632-634) ─
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_fk_with_model_instance_covers_prepare_database_save():
+    """aupdate with a model instance for a FK field uses prepare_database_save (lines 632-634)."""
+    client = await Client.objects.acreate(name="FKUpdate_Orig")
+    invoice = await Invoice.objects.acreate(
+        client=client, reference="FKU-CC-001", total=Decimal("5.00")
+    )
+    new_client = await Client.objects.acreate(name="FKUpdate_New")
+    count = await Invoice.objects.filter(pk=invoice.pk).aupdate(client=new_client)
+    assert count == 1
+    refreshed = await Invoice.objects.aget(pk=invoice.pk)
+    assert refreshed.client_id == new_client.pk

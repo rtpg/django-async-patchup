@@ -1367,3 +1367,26 @@ async def test_asave_force_update_nonexistent_row_raises():
     with pytest.raises(DatabaseError, match="Forced update did not affect any rows"):
         await ghost.asave(force_update=True)
 
+
+# ---------------------------------------------------------------------------
+# MTI asave with update_fields targeting only child field (models/__init__.py line 333)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_mti_asave_child_only_update_fields_covers_empty_parent_values():
+    """asave(update_fields=[child_field]) on MTI triggers empty values for the parent table.
+
+    Person._ado_update gets values=[] (line 333: return update_fields is not None or ...)
+    because 'department' is not a Person field.
+    """
+    emp = await Employee.objects.acreate(first_name="MTI333", department="Sales")
+    emp.department = "Marketing"
+    await emp.asave(update_fields=["department"])
+
+    refreshed = await Employee.objects.aget(pk=emp.pk)
+    assert refreshed.department == "Marketing"
+    # first_name untouched
+    assert refreshed.first_name == "MTI333"
+

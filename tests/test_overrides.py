@@ -309,6 +309,30 @@ async def test_aaggregate_positional_complex_raises_type_error():
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
+async def test_ain_bulk_sliced_queryset_raises():
+    """ain_bulk() on a sliced queryset raises TypeError (query.py line 621)."""
+    with pytest.raises(TypeError, match="Cannot use 'limit' or 'offset' with in_bulk"):
+        await Client.objects.all()[0:5].ain_bulk()
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_ain_bulk_values_queryset_raises():
+    """ain_bulk() on a values() queryset raises TypeError (query.py line 623)."""
+    with pytest.raises(TypeError, match="in_bulk\\(\\) cannot be used with values"):
+        await Client.objects.values("name").ain_bulk()
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_no_args_returns_empty_dict():
+    """aaggregate() with no args returns {} (sql/__init__.py line 18)."""
+    result = await Client.objects.aaggregate()
+    assert result == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
 async def test_select_related_async_iteration_covers_related_populators():
     """select_related() with async iteration covers rel_populators path (query.py line 165)."""
     client = await sync_to_async(Client.objects.create)(name="SR_Client")

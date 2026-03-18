@@ -1315,3 +1315,55 @@ async def test_mark_for_rollback_on_error_aexit_sets_rollback(monkeypatch):
     assert fake_conn.needs_rollback is True
     assert fake_conn.rollback_exc is exc
 
+
+# ---------------------------------------------------------------------------
+# aget_compiler with no using and no connection raises ValueError (sql/query.py line 15)
+# ---------------------------------------------------------------------------
+
+
+def test_aget_compiler_no_using_or_connection_raises():
+    """aget_compiler() with neither using nor connection raises ValueError."""
+    from django.db.models.sql.query import Query
+
+    q = Query(Client)
+    with pytest.raises(ValueError, match="Need either using or connection"):
+        q.aget_compiler()
+
+
+# ---------------------------------------------------------------------------
+# asave on a deferred object auto-computes update_fields (models/__init__.py lines 84-91)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_deferred_object_auto_update_fields():
+    """Saving a deferred object triggers the deferred-fields elif branch (lines 84-91)."""
+    client = await Client.objects.acreate(name="Deferred", metadata={"v": 1})
+    # Fetch with 'name' deferred so it is absent from __dict__
+    deferred = await Client.objects.defer("name").aget(pk=client.pk)
+    deferred.metadata = {"v": 2}
+    await deferred.asave()  # should auto-set update_fields to the loaded fields
+
+    refreshed = await Client.objects.aget(pk=client.pk)
+    assert refreshed.metadata == {"v": 2}
+    assert refreshed.name == "Deferred"  # deferred field unchanged
+
+
+# ---------------------------------------------------------------------------
+# asave with force_update on a non-existent row raises DatabaseError (line 283)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_asave_force_update_nonexistent_row_raises():
+    """asave(force_update=True) raises DatabaseError when no row is updated (line 283)."""
+    from django.db import DatabaseError
+
+    ghost = Client(name="Ghost")
+    ghost.pk = 999999  # non-existent pk
+    ghost._state.adding = False  # pretend it was already saved
+    with pytest.raises(DatabaseError, match="Forced update did not affect any rows"):
+        await ghost.asave(force_update=True)
+

@@ -601,3 +601,21 @@ async def test_delete_with_cross_table_filter_uses_subquery():
     count = await Invoice.objects.filter(client__name="DeleteSubquery_Client")._araw_delete(using="default")
     assert count == 1
     assert not await Invoice.objects.filter(pk=invoice.pk).aexists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_ain_bulk_returns_empty_dict_for_empty_list():
+    """ain_bulk([]) with explicit empty id_list returns {} (query.py line 641-642)."""
+    await Client.objects.acreate(name="InBulk_A")
+    result = await Client.objects.ain_bulk([])
+    assert result == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_with_no_fields_returns_zero():
+    """aupdate() with no fields generates empty SQL → EmptyResultSet path (compiler.py:301, 608)."""
+    await Client.objects.acreate(name="EmptyUpdate_Xq7")
+    count = await Client.objects.filter(name="EmptyUpdate_Xq7").aupdate()
+    assert count == 0

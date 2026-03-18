@@ -487,6 +487,26 @@ async def test_aupdate_truly_unfiltered_covers_full_result_set():
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
+async def test_aexplain_covers_string_yield_branch():
+    """aexplain_query() yields string rows from EXPLAIN output (compiler.py line 431)."""
+    await Client.objects.acreate(name="Explain_Client")
+    result = await Client.objects.filter(name="Explain_Client").aexplain()
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_select_for_update_outside_transaction_raises():
+    """select_for_update() outside a transaction raises TransactionManagementError (compiler.py line 106)."""
+    from django.db.transaction import TransactionManagementError
+
+    with pytest.raises(TransactionManagementError, match="outside of a transaction"):
+        await Client.objects.select_for_update().aget(name="NonExistent_SFU")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
 async def test_annotate_with_distinct_fields_raises_not_implemented():
     """annotate() + distinct(fields) raises NotImplementedError (compiler.py line 162)."""
     from django.db.models import Count

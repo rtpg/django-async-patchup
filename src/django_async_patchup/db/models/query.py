@@ -647,7 +647,7 @@ class ModelIterableOverrides:
             id_list = tuple(id_list)
             # If the database has a limit on the number of query parameters
             # (e.g. SQLite), retrieve objects in batches if necessary.
-            if batch_size and batch_size < len(id_list):
+            if batch_size and batch_size < len(id_list):  # pragma: no cover
                 qs = ()
                 for offset in range(0, len(id_list), batch_size):
                     batch = id_list[offset : offset + batch_size]

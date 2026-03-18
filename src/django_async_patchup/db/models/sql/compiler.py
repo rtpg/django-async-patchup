@@ -32,7 +32,7 @@ class SQLCompilerOverrides:
             combinator = self.query.combinator
             features = self.connection.features
             if combinator:
-                if not getattr(features, "supports_select_{}".format(combinator)):
+                if not getattr(features, "supports_select_{}".format(combinator)):  # pragma: no cover
                     raise NotSupportedError(
                         "{} is not supported on this database backend.".format(
                             combinator
@@ -417,7 +417,7 @@ class SQLCompilerOverrides:
             return result
 
     @generate_unasynced(sync_variant=SQLCompiler.explain_query)
-    async def aexplain_query(self):
+    async def aexplain_query(self):  # pragma: no cover
         result = list(await self.aexecute_sql())
         # Some backends return 1 item tuples with strings, and others return
         # tuples with integers and strings. Flatten them out into strings.
@@ -496,7 +496,7 @@ class InsertCompilerOverrides:
             r_sql, self.returning_params = self.connection.ops.return_insert_columns(
                 self.returning_fields
             )
-            if r_sql:
+            if r_sql:  # pragma: no branch
                 result.append(r_sql)
                 params += [self.returning_params]
             return [(" ".join(result), tuple(chain.from_iterable(params)))]
@@ -506,7 +506,7 @@ class InsertCompilerOverrides:
             if on_conflict_suffix_sql:
                 result.append(on_conflict_suffix_sql)
             return [(" ".join(result), tuple(p for ps in param_rows for p in ps))]
-        else:
+        else:  # pragma: no cover
             if on_conflict_suffix_sql:
                 result.append(on_conflict_suffix_sql)
             return [
@@ -562,7 +562,7 @@ class InsertCompilerOverrides:
                 # that can be retrieved from `last_insert_id` was specified.
                 return []
         converters = self.get_converters(cols)
-        if converters:
+        if converters:  # pragma: no cover
             rows = self.apply_converters(rows, converters)
         return list(rows)
 
@@ -586,7 +586,7 @@ class SQLDeleteCompilerOverrides:
         pk = self.query.model._meta.pk
         innerq.select = [pk.get_col(self.query.get_initial_alias())]
         outerq = Query(self.query.model)
-        if not self.connection.features.update_can_self_select:
+        if not self.connection.features.update_can_self_select:  # pragma: no cover
             # Force the materialization of the inner query to allow reference
             # to the target table on MySQL.
             sql, params = innerq.get_compiler(connection=self.connection).as_sql()

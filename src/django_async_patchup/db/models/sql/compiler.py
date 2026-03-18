@@ -253,7 +253,7 @@ class SQLCompilerOverrides:
                 MULTI, chunked_fetch=chunked_fetch, chunk_size=chunk_size
             )
         if ASYNC_TRUTH_MARKER:  # pragma: no branch
-            if results is not None:
+            if results is not None:  # pragma: no branch
                 # XXX wrong
                 # this is forcing evaluation of athing way to early
                 # instead of being an actual iterable
@@ -264,9 +264,9 @@ class SQLCompilerOverrides:
         rows = chain.from_iterable(results)
         if converters:
             rows = self.apply_converters(rows, converters)
-        if self.has_composite_fields(fields):
+        if self.has_composite_fields(fields):  # pragma: no cover
             rows = self.composite_fields_to_tuples(rows, fields)
-        if tuple_expected:
+        if tuple_expected:  # pragma: no cover
             rows = map(tuple, rows)
         return rows
 

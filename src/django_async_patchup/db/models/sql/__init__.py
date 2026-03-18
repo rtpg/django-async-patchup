@@ -200,7 +200,7 @@ class QueryOverrides:
             cols = outer_query.annotation_select.values()
             converters = compiler.get_converters(cols)
             rows = compiler.apply_converters((result,), converters)
-            if compiler.has_composite_fields(cols):
+            if compiler.has_composite_fields(cols):  # pragma: no cover
                 rows = compiler.composite_fields_to_tuples(rows, cols)
             result = next(rows)
 

@@ -534,3 +534,70 @@ async def test_asave_on_deferred_queryset_triggers_loaded_fields_path():
     assert refreshed.name == "DeferTestUpdated"
     # metadata should not have been overwritten (deferred field preserved)
     assert refreshed.metadata == {"x": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_non_aggregate_expression_raises_type_error():
+    """aaggregate() with a non-aggregate expression raises TypeError (sql/__init__.py line 31)."""
+    from django.db.models import Value
+
+    with pytest.raises(TypeError, match="not an aggregate expression"):
+        await Client.objects.aaggregate(my_val=Value(42))
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_reused_column_in_multiple_aggregates():
+    """aaggregate() with two aggregates on the same column reuses col_refs (sql/__init__.py lines 140->146)."""
+    from django.db.models import Sum, Avg
+
+    client = await Client.objects.acreate(name="MultiAgg")
+    await Invoice.objects.acreate(client=client, reference="MA-001", total=Decimal("10.00"))
+    await Invoice.objects.acreate(client=client, reference="MA-002", total=Decimal("20.00"))
+    result = await Invoice.objects.filter(client=client).aaggregate(
+        total_sum=Sum("total"), total_avg=Avg("total")
+    )
+    assert result["total_sum"] == Decimal("30.00")
+    assert result["total_avg"] == Decimal("15.00")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aaggregate_on_empty_queryset_returns_empty_result():
+    """aaggregate() on impossible filter (EmptyResultSet) returns empty_set_result (sql/__init__.py line 198)."""
+    from django.db.models import Sum
+
+    result = await Invoice.objects.filter(id__in=[]).aaggregate(total=Sum("total"))
+    assert result == {"total": None}
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_create_proxy_model_same_concrete_takes_false_branch():
+    """abulk_create() on a proxy model: parent's concrete_model == self's → no raise (query.py line 316->315)."""
+    from django.db import models
+
+    class ProxyClient(Client):
+        class Meta:
+            proxy = True
+            app_label = "biz"
+
+    objs = await ProxyClient.objects.abulk_create(
+        [ProxyClient(name="BulkProxy_A"), ProxyClient(name="BulkProxy_B")]
+    )
+    assert len(objs) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_delete_with_cross_table_filter_uses_subquery():
+    """DELETE with a cross-table filter generates a subquery (SQLDeleteCompilerOverrides lines 583-595)."""
+    client = await Client.objects.acreate(name="DeleteSubquery_Client")
+    invoice = await Invoice.objects.acreate(
+        client=client, reference="DS-001", total=Decimal("50.00")
+    )
+    # Filter Invoice by related Client name → JOIN → single_alias=False → subquery DELETE
+    count = await Invoice.objects.filter(client__name="DeleteSubquery_Client")._araw_delete(using="default")
+    assert count == 1
+    assert not await Invoice.objects.filter(pk=invoice.pk).aexists()

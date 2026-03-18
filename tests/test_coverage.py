@@ -1254,3 +1254,64 @@ async def test_adelete_single_instance_fast_path_via_signal():
     finally:
         pre_delete.disconnect(_handler, sender=Person)
 
+
+# ---------------------------------------------------------------------------
+# registry.get_owning_class edge cases (lines 13, 21)
+# ---------------------------------------------------------------------------
+
+
+def test_get_owning_class_with_bound_method():
+    """get_owning_class unwraps bound methods via __func__ (covers line 13)."""
+    from django_async_patchup.registry import get_owning_class
+    from django.db.models import Model
+
+    client = Client()
+    # client.save is a bound method → inspect.ismethod returns True
+    result = get_owning_class(client.save)
+    assert result is Model
+
+
+def test_get_owning_class_mismatch_returns_none():
+    """get_owning_class returns None when the class attr doesn't match func (covers line 21)."""
+    import django.db.models.base as base_module
+    from django_async_patchup.registry import get_owning_class
+
+    def fake_save():
+        pass
+
+    fake_save.__qualname__ = "Model.save"
+    fake_save.__module__ = base_module.__name__
+
+    result = get_owning_class(fake_save)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# MarkForRollbackOnError.__aexit__ with an exception (transaction.py lines 26-27)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mark_for_rollback_on_error_aexit_sets_rollback(monkeypatch):
+    """MarkForRollbackOnError.__aexit__ marks connection for rollback when an exception occurs in an atomic block."""
+    import django_async_patchup.db.models.transaction as txn_mod
+    from django_async_patchup.db.models.transaction import MarkForRollbackOnError
+
+    class FakeConn:
+        in_atomic_block = True
+        needs_rollback = False
+        rollback_exc = None
+
+    fake_conn = FakeConn()
+
+    async def fake_aget_connection(using):
+        return fake_conn
+
+    monkeypatch.setattr(txn_mod, "aget_connection", fake_aget_connection)
+
+    ctx = MarkForRollbackOnError(using="default")
+    exc = ValueError("simulated error")
+    await ctx.__aexit__(ValueError, exc, None)
+    assert fake_conn.needs_rollback is True
+    assert fake_conn.rollback_exc is exc
+

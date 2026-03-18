@@ -53,7 +53,7 @@ class RegistryItem:
                 #     ")",
                 # )
                 setattr(owning_cls, self.our_copy.__name__, self.our_copy)
-            case _:
+            case _:  # pragma: no cover
                 assert False, self.label
 
 

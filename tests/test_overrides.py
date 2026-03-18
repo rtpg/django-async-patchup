@@ -347,3 +347,44 @@ async def test_select_related_async_iteration_covers_related_populators():
     ]
     assert len(invoices) == 1
     assert invoices[0].client.name == "SR_Client"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_abulk_update_non_concrete_field_raises():
+    """abulk_update() with a non-concrete field (reverse FK) raises ValueError (query.py line 405)."""
+    client = await Client.objects.acreate(name="BulkUpdateConcrete", metadata={})
+    with pytest.raises(ValueError, match="bulk_update\\(\\) can only be used with concrete fields"):
+        await Client.objects.abulk_update([client], ["invoices"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_aggregate_annotation_order_by_raises():
+    """aupdate with an aggregate annotation in order_by raises FieldError (query.py line 735-736)."""
+    from django.core.exceptions import FieldError
+
+    await Client.objects.acreate(name="AggOrd", metadata={})
+    with pytest.raises(FieldError, match="Cannot update when ordering by an aggregate"):
+        await (
+            Client.objects.annotate(cnt=Count("id"))
+            .order_by("cnt")
+            .filter(name="AggOrd")
+            .aupdate(metadata={"updated": True})
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+async def test_aupdate_non_aggregate_annotation_order_by_inlines():
+    """aupdate with a non-aggregate annotation in order_by inlines it (query.py line 741)."""
+    from django.db.models.functions import Length
+
+    await Client.objects.acreate(name="InlineAnno", metadata={})
+    count = await (
+        Client.objects.annotate(name_len=Length("name"))
+        .order_by("name_len")
+        .filter(name="InlineAnno")
+        .aupdate(metadata={"inlined": True})
+    )
+    assert count == 1
